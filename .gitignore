@@ -1,0 +1,98 @@
+# =========================
+
+# Go build artifacts
+
+# =========================
+
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# Go binary（你的服务）
+
+
+# =========================
+
+# Go workspace & cache
+
+# =========================
+
+/bin/
+/dist/
+/build/
+
+# Go module cache（极少需要提交）
+
+/vendor/
+
+# =========================
+
+# Runtime files
+
+# =========================
+
+*.log
+*.pid
+*.sock
+
+# =========================
+
+# Configuration (runtime)
+
+# =========================
+
+config.local.yaml
+config.local.yml
+config.dev.yaml
+config.dev.yml
+
+# =========================
+
+# Embedded / Device specific
+
+# =========================
+
+/data/
+/tmp/
+/run/
+/mnt/
+
+
+# =========================
+
+# Editor / IDE
+
+# =========================
+
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# =========================
+
+# OS files
+
+# =========================
+
+.DS_Store
+Thumbs.db
+
+# =========================
+
+# Test / coverage
+
+# =========================
+
+coverage.out
+coverage.html
+
+__pycache__
+
+.shared
+.cursor

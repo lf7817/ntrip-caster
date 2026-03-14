@@ -58,12 +58,6 @@ const roleBadgeVariant: Record<string, "default" | "secondary" | "outline"> = {
   rover: "outline",
 }
 
-const permBadgeVariant: Record<string, "default" | "secondary" | "outline"> = {
-  publish: "default",
-  subscribe: "secondary",
-  admin: "outline",
-}
-
 export default function UsersPage() {
   const { data: users, isLoading } = useUsers()
   const createUser = useCreateUser()
@@ -320,7 +314,9 @@ function UserBindingsSection({ userId }: { userId: number }) {
   const deleteBinding = useDeleteBinding()
 
   const [addMpId, setAddMpId] = useState("")
-  const [addPerm, setAddPerm] = useState("subscribe")
+
+  const boundMpIds = new Set(bindings?.map((b) => b.mountpoint_id) ?? [])
+  const availableMountpoints = mountpoints?.filter((mp) => !boundMpIds.has(mp.id)) ?? []
 
   async function handleAdd() {
     if (!addMpId) return
@@ -328,7 +324,6 @@ function UserBindingsSection({ userId }: { userId: number }) {
       await createBinding.mutateAsync({
         user_id: userId,
         mountpoint_id: Number(addMpId),
-        permission: addPerm,
       })
       toast.success("绑定添加成功")
       setAddMpId("")
@@ -348,7 +343,12 @@ function UserBindingsSection({ userId }: { userId: number }) {
 
   return (
     <div className="space-y-3">
-      <Label className="text-sm font-medium">挂载点绑定</Label>
+      <Label className="text-sm font-medium">
+        可访问的挂载点
+      </Label>
+      <p className="text-xs text-muted-foreground">
+        base 用户绑定后可推流，rover 用户绑定后可订阅
+      </p>
 
       {isLoading ? (
         <Skeleton className="h-16" />
@@ -361,12 +361,7 @@ function UserBindingsSection({ userId }: { userId: number }) {
               key={b.id}
               className="flex items-center justify-between rounded-md border px-3 py-1.5 text-sm"
             >
-              <div className="flex items-center gap-2">
-                <span className="font-medium">{b.mountpoint_name}</span>
-                <Badge variant={permBadgeVariant[b.permission] ?? "outline"} className="text-xs">
-                  {b.permission}
-                </Badge>
-              </div>
+              <span className="font-medium">{b.mountpoint_name}</span>
               <Button
                 variant="ghost"
                 size="icon"
@@ -387,23 +382,11 @@ function UserBindingsSection({ userId }: { userId: number }) {
               <SelectValue placeholder="选择挂载点" />
             </SelectTrigger>
             <SelectContent>
-              {mountpoints?.map((mp) => (
+              {availableMountpoints.map((mp) => (
                 <SelectItem key={mp.id} value={String(mp.id)}>
                   {mp.name}
                 </SelectItem>
               ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="w-28">
-          <Select value={addPerm} onValueChange={(v) => v && setAddPerm(v)}>
-            <SelectTrigger className="h-8 text-xs">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="publish">publish</SelectItem>
-              <SelectItem value="subscribe">subscribe</SelectItem>
-              <SelectItem value="admin">admin</SelectItem>
             </SelectContent>
           </Select>
         </div>

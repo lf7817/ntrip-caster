@@ -427,20 +427,19 @@ func (h *Handlers) ListUserBindings(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handlers) CreateBinding(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		UserID       int64  `json:"user_id"`
-		MountPointID int64  `json:"mountpoint_id"`
-		Permission   string `json:"permission"`
+		UserID       int64 `json:"user_id"`
+		MountPointID int64 `json:"mountpoint_id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		jsonError(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
-	if req.UserID == 0 || req.MountPointID == 0 || req.Permission == "" {
-		jsonError(w, "user_id, mountpoint_id, and permission are required", http.StatusBadRequest)
+	if req.UserID == 0 || req.MountPointID == 0 {
+		jsonError(w, "user_id and mountpoint_id are required", http.StatusBadRequest)
 		return
 	}
 
-	if err := h.acctSvc.AddBinding(req.UserID, req.MountPointID, req.Permission); err != nil {
+	if err := h.acctSvc.AddBinding(req.UserID, req.MountPointID); err != nil {
 		jsonError(w, err.Error(), http.StatusConflict)
 		return
 	}

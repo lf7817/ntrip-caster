@@ -254,11 +254,11 @@ func (s *Service) DeleteMountPointRow(id int64) error {
 
 // --- Bindings ---
 
-// AddBinding creates a user-mountpoint permission binding.
-func (s *Service) AddBinding(userID, mountpointID int64, permission string) error {
+// AddBinding creates a user-mountpoint access binding.
+func (s *Service) AddBinding(userID, mountpointID int64) error {
 	_, err := s.db.Exec(
-		"INSERT OR IGNORE INTO user_mountpoint_bindings (user_id, mountpoint_id, permission) VALUES (?, ?, ?)",
-		userID, mountpointID, permission,
+		"INSERT OR IGNORE INTO user_mountpoint_bindings (user_id, mountpoint_id) VALUES (?, ?)",
+		userID, mountpointID,
 	)
 	if err != nil {
 		return fmt.Errorf("add binding: %w", err)
@@ -269,7 +269,7 @@ func (s *Service) AddBinding(userID, mountpointID int64, permission string) erro
 // ListBindings returns all bindings with joined user/mountpoint names.
 func (s *Service) ListBindings() ([]*Binding, error) {
 	rows, err := s.db.Query(`
-		SELECT b.id, b.user_id, b.mountpoint_id, b.permission, u.username, m.name
+		SELECT b.id, b.user_id, b.mountpoint_id, u.username, m.name
 		FROM user_mountpoint_bindings b
 		JOIN users u ON b.user_id = u.id
 		JOIN mountpoints m ON b.mountpoint_id = m.id
@@ -282,7 +282,7 @@ func (s *Service) ListBindings() ([]*Binding, error) {
 	var list []*Binding
 	for rows.Next() {
 		b := &Binding{}
-		if err := rows.Scan(&b.ID, &b.UserID, &b.MountPointID, &b.Permission, &b.Username, &b.MountPointName); err != nil {
+		if err := rows.Scan(&b.ID, &b.UserID, &b.MountPointID, &b.Username, &b.MountPointName); err != nil {
 			return nil, fmt.Errorf("scan binding: %w", err)
 		}
 		list = append(list, b)
@@ -293,7 +293,7 @@ func (s *Service) ListBindings() ([]*Binding, error) {
 // ListBindingsByUser returns all bindings for a specific user.
 func (s *Service) ListBindingsByUser(userID int64) ([]*Binding, error) {
 	rows, err := s.db.Query(`
-		SELECT b.id, b.user_id, b.mountpoint_id, b.permission, u.username, m.name
+		SELECT b.id, b.user_id, b.mountpoint_id, u.username, m.name
 		FROM user_mountpoint_bindings b
 		JOIN users u ON b.user_id = u.id
 		JOIN mountpoints m ON b.mountpoint_id = m.id
@@ -307,7 +307,7 @@ func (s *Service) ListBindingsByUser(userID int64) ([]*Binding, error) {
 	var list []*Binding
 	for rows.Next() {
 		b := &Binding{}
-		if err := rows.Scan(&b.ID, &b.UserID, &b.MountPointID, &b.Permission, &b.Username, &b.MountPointName); err != nil {
+		if err := rows.Scan(&b.ID, &b.UserID, &b.MountPointID, &b.Username, &b.MountPointName); err != nil {
 			return nil, fmt.Errorf("scan binding: %w", err)
 		}
 		list = append(list, b)
@@ -315,14 +315,14 @@ func (s *Service) ListBindingsByUser(userID int64) ([]*Binding, error) {
 	return list, rows.Err()
 }
 
-// HasBinding checks if a user has a specific permission on a mountpoint.
-func (s *Service) HasBinding(userID int64, mountpointName, permission string) (bool, error) {
+// HasBinding checks if a user has access to a mountpoint.
+func (s *Service) HasBinding(userID int64, mountpointName string) (bool, error) {
 	var count int
 	err := s.db.QueryRow(`
 		SELECT COUNT(*) FROM user_mountpoint_bindings b
 		JOIN mountpoints m ON b.mountpoint_id = m.id
-		WHERE b.user_id = ? AND m.name = ? AND b.permission = ?`,
-		userID, mountpointName, permission,
+		WHERE b.user_id = ? AND m.name = ?`,
+		userID, mountpointName,
 	).Scan(&count)
 	if err != nil {
 		return false, fmt.Errorf("check binding: %w", err)

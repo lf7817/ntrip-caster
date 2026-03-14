@@ -33,8 +33,7 @@ CREATE TABLE IF NOT EXISTS user_mountpoint_bindings (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id       INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     mountpoint_id INTEGER NOT NULL REFERENCES mountpoints(id) ON DELETE CASCADE,
-    permission    TEXT    NOT NULL DEFAULT 'subscribe',
-    UNIQUE(user_id, mountpoint_id, permission)
+    UNIQUE(user_id, mountpoint_id)
 );
 `
 
@@ -61,5 +60,35 @@ func Open(path string) (*sql.DB, error) {
 		return nil, fmt.Errorf("create schema: %w", err)
 	}
 
+	if err := migrateBindings(db); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("migrate bindings: %w", err)
+	}
+
 	return db, nil
+}
+
+// migrateBindings drops the legacy permission column if it exists by
+// recreating the table. This is a one-time migration for existing databases.
+func migrateBindings(db *sql.DB) error {
+	var count int
+	err := db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('user_mountpoint_bindings') WHERE name = 'permission'`).Scan(&count)
+	if err != nil || count == 0 {
+		return nil
+	}
+
+	migration := `
+		CREATE TABLE IF NOT EXISTS _bindings_new (
+			id            INTEGER PRIMARY KEY AUTOINCREMENT,
+			user_id       INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+			mountpoint_id INTEGER NOT NULL REFERENCES mountpoints(id) ON DELETE CASCADE,
+			UNIQUE(user_id, mountpoint_id)
+		);
+		INSERT OR IGNORE INTO _bindings_new (user_id, mountpoint_id)
+			SELECT DISTINCT user_id, mountpoint_id FROM user_mountpoint_bindings;
+		DROP TABLE user_mountpoint_bindings;
+		ALTER TABLE _bindings_new RENAME TO user_mountpoint_bindings;
+	`
+	_, err = db.Exec(migration)
+	return err
 }

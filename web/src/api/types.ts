@@ -49,7 +49,6 @@ export interface Binding {
   id: number
   user_id: number
   mountpoint_id: number
-  permission: "publish" | "subscribe" | "admin"
   username?: string
   mountpoint_name?: string
 }
@@ -57,7 +56,6 @@ export interface Binding {
 export interface CreateBindingReq {
   user_id: number
   mountpoint_id: number
-  permission: string
 }
 
 export interface SourceInfo {

@@ -22,12 +22,15 @@ type MountPointRow struct {
 	WriteTimeoutMs  *int   `json:"write_timeout_ms,omitempty"`
 }
 
-// Binding represents a user-mountpoint permission binding.
+// Binding represents a user-mountpoint access binding.
+// The type of access (publish vs subscribe) is determined by the user's role:
+//   - base  user + binding → can publish to the mountpoint
+//   - rover user + binding → can subscribe to the mountpoint
+//   - admin user → no binding needed
 type Binding struct {
 	ID             int64  `json:"id"`
 	UserID         int64  `json:"user_id"`
 	MountPointID   int64  `json:"mountpoint_id"`
-	Permission     string `json:"permission"` // publish / subscribe / admin
 	Username       string `json:"username,omitempty"`
 	MountPointName string `json:"mountpoint_name,omitempty"`
 }
@@ -37,11 +40,4 @@ const (
 	RoleAdmin = "admin"
 	RoleBase  = "base"
 	RoleRover = "rover"
-)
-
-// Permissions
-const (
-	PermPublish   = "publish"
-	PermSubscribe = "subscribe"
-	PermAdmin     = "admin"
 )

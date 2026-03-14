@@ -91,6 +91,12 @@
     │   ├── client
     │   │     client.go
     │   │
+    │   ├── rtcm
+    │   │     framer.go
+    │   │
+    │   ├── limiter
+    │   │     ip_limiter.go
+    │   │
     │   ├── auth
     │   │     auth.go
     │   │
@@ -139,8 +145,8 @@
         Name        string
         Description string
         Enabled     bool      // 与数据库 mountpoints.enabled 一致，禁用则不列入 Sourcetable、不可挂载
-        WriteQueue  int       // 可选，覆盖全局 client_write_queue
-        WriteTimeout time.Duration // 可选，覆盖全局 client_write_timeout
+        WriteQueue   int            // 可选，覆盖 mountpoint_defaults.write_queue
+        WriteTimeout time.Duration  // 可选，覆盖 mountpoint_defaults.write_timeout
 
         Source  *Source
         Clients map[string]*Client
@@ -153,9 +159,11 @@
 高并发优化版（推荐用于生产）：
 
     type MountPoint struct {
-        Name        string
-        Description string
-        Enabled     bool
+        Name         string
+        Description  string
+        Enabled      bool
+        WriteQueue   int
+        WriteTimeout time.Duration
 
         Source *Source
 
@@ -177,9 +185,11 @@
 ## Source
 
     type Source struct {
-        ID string
-        Conn net.Conn
-        Mount *MountPoint
+        ID        string
+        Conn      net.Conn
+        Mount     *MountPoint
+        Done      chan struct{}
+        CloseOnce sync.Once
         StartTime time.Time
     }
 
@@ -199,22 +209,77 @@
 
 ------------------------------------------------------------------------
 
+## MountStats
+
+    type MountStats struct {
+        ClientCount    int64
+        SourceOnline   bool
+        BytesIn        int64
+        BytesOut       int64
+        SlowClients    int64
+        KickCount      int64
+    }
+
+说明：
+
+-   字段使用 `atomic` 操作更新，避免在广播路径加锁。
+-   `SlowClients` 记录当前被标记为慢的客户端数，`KickCount` 记录累计踢除次数。
+-   Prometheus 采集时直接读取这些原子值。
+
+------------------------------------------------------------------------
+
 ## Client
 
     type Client struct {
-        ID string
-        Conn net.Conn
-        Mount *MountPoint
+        ID        string
+        Conn      net.Conn
+        Mount     *MountPoint
         WriteChan chan *RTCMPacket
-        Done chan struct{}
-        slow int32
+        Done      chan struct{}
+        slow      int32
         CloseOnce sync.Once
         ConnectedAt time.Time
     }
 
+Client 与 MountPoint 的解绑：
+
+    func (c *Client) removeFromMount() {
+        if c.Mount == nil {
+            return
+        }
+        c.Mount.removeClient(c.ID)
+    }
+
+说明：
+
+-   `removeFromMount()` 是 `writeLoop` 退出时 `defer` 调用的唯一出口。
+-   它最终调用 `MountPoint.removeClient(id)`，后者持写锁从 `clientsByID` 删除并重建 snapshot。
+-   不要在 `Broadcast()` 路径里直接删 client，否则会死锁或破坏快照一致性。
+
 ------------------------------------------------------------------------
 
 # 5. 连接生命周期
+
+## 请求识别
+
+所有连接进入同一个 TCP 端口（2101），Caster 需要根据请求首行区分类型：
+
+    请求首行                         类型
+    ─────────────────────────────   ──────────────
+    GET / HTTP/1.0                  Sourcetable 请求
+    GET / HTTP/1.1                  Sourcetable 请求
+    GET /mountpoint HTTP/1.0        Rover 挂载（Rev1）
+    GET /mountpoint HTTP/1.1        Rover 挂载（Rev1/Rev2）
+    SOURCE password /mountpoint     Source 推流（Rev1）
+    POST /mountpoint HTTP/1.1       Source 推流（Rev2）
+
+说明：
+
+-   `GET /`（路径为 `/`）= Sourcetable；`GET /xxx`（路径非 `/`）= Rover 挂载。
+-   Rev2 Rover 会带 `Ntrip-Version: Ntrip/2.0` 头，但 Caster 对 Rover 的处理逻辑基本相同。
+-   Rev1 Source 使用非标准 HTTP 动词 `SOURCE`，需要单独解析。
+
+------------------------------------------------------------------------
 
 ## Rover Client
 
@@ -230,14 +295,25 @@
        ↓
     注册 Client
        ↓
+    返回 ICY 200 OK
+       ↓
     启动 writeLoop
 
-失败响应建议：
+成功响应：
+
+    ICY 200 OK\r\n
+    \r\n
+
+失败响应：
+
+    HTTP/1.1 401 Unauthorized\r\n
+    \r\n
 
 -   未认证：返回 `401 Unauthorized`
 -   已认证但无权限：返回 `403 Forbidden`
--   Mountpoint 不存在或已禁用：返回 `404 Not Found` 或兼容设备所需的最小错误响应
+-   Mountpoint 不存在或已禁用：返回 `404 Not Found`
 -   文档与代码应统一错误响应策略，优先保证常见 NTRIP 设备兼容性
+-   部分老设备只认 `ICY 200 OK`，不认 `HTTP/1.1 200 OK`；如需兼容 Rev2 客户端，可根据请求头中的 `Ntrip-Version` 决定响应格式
 
 ------------------------------------------------------------------------
 
@@ -253,11 +329,29 @@
        ↓
     注册 Mountpoint Source
        ↓
+    返回成功响应
+       ↓
     RTCM Framing
        ↓
     接收完整 RTCM 包
        ↓
     广播 RTCM
+
+成功响应（Rev1）：
+
+    ICY 200 OK\r\n
+    \r\n
+
+成功响应（Rev2）：
+
+    HTTP/1.1 200 OK\r\n
+    \r\n
+
+失败响应：
+
+-   密码/账号错误：`401 Unauthorized`（Rev2）或 `ERROR - Bad Password\r\n`（Rev1）
+-   Mountpoint 已被占用：`409 Conflict`
+-   Mountpoint 不存在且不允许自动创建：`404 Not Found`
 
 协议要求：
 
@@ -527,7 +621,31 @@ Source 读循环（先 framing，再广播完整包）：
 
 ------------------------------------------------------------------------
 
-# 9. Sourcetable 自动生成
+# 9. 连接限流
+
+NTRIP Caster 的 2101 端口直接暴露在公网，必须做基本的连接限流：
+
+    type IPLimiter struct {
+        mu     sync.Mutex
+        counts map[string]int
+        limit  int
+    }
+
+策略：
+
+-   每个 IP 最大并发连接数，建议默认 10。
+-   在 `TCP Accept` 之后、协议解析之前检查，超限直接关闭连接。
+-   连接关闭时递减计数。
+-   不需要复杂的令牌桶或滑动窗口，简单的并发计数器即可。
+
+说明：
+
+-   该限流保护的是 Caster 本身不被单 IP 耗尽连接资源，不替代外部防火墙或 LoadBalancer 的 DDoS 防护。
+-   如果部署在反向代理后面，注意识别真实客户端 IP（此时 TCP 层 RemoteAddr 可能全是代理 IP）。
+
+------------------------------------------------------------------------
+
+# 10. Sourcetable 自动生成
 
 当客户端请求：
 
@@ -553,7 +671,7 @@ Source 读循环（先 framing，再广播完整包）：
 
 ------------------------------------------------------------------------
 
-# 10. Web API
+# 11. Web API
 
 示例接口：
 
@@ -573,7 +691,7 @@ Source 读循环（先 framing，再广播完整包）：
 
 ------------------------------------------------------------------------
 
-# 11. 数据库设计
+# 12. 数据库设计
 
 默认推荐：SQLite
 
@@ -599,8 +717,8 @@ Source 读循环（先 framing，再广播完整包）：
     format              // 如 RTCM3
     source_auth_mode    // user_binding / secret
     source_secret_hash  // 可空，仅兼容传统设备时使用
-    write_queue         // 可空，覆盖全局默认值
-    write_timeout_ms    // 可空，覆盖全局默认值
+    write_queue         // 可空，覆盖 mountpoint_defaults.write_queue
+    write_timeout_ms    // 可空，覆盖 mountpoint_defaults.write_timeout
 
 ## user_mountpoint_bindings
 
@@ -617,7 +735,7 @@ Source 读循环（先 framing，再广播完整包）：
 
 ------------------------------------------------------------------------
 
-# 12. Metrics
+# 13. Metrics
 
 统计数据：
 
@@ -650,7 +768,7 @@ Mountpoint：
 
 ------------------------------------------------------------------------
 
-# 13. 配置文件
+# 14. 配置文件
 
     server:
       listen: ":2101"       # NTRIP 唯一端口
@@ -668,16 +786,15 @@ Mountpoint：
 
     limits:
       max_clients: 5000     # 全局 Rover 上限（非 per-mountpoint）
-      client_write_queue: 64
-      client_write_timeout: 3s
+      max_conn_per_ip: 10   # 单 IP 最大并发连接数，防扫描/滥用
 
     mountpoint_defaults:
-      write_queue: 64
-      write_timeout: 3s
+      write_queue: 64        # 每客户端 WriteChan 缓冲大小
+      write_timeout: 3s      # 每客户端写超时；Mountpoint 可单独覆盖
 
 ------------------------------------------------------------------------
 
-# 14. 性能目标
+# 15. 性能目标
 
 服务器：
 
@@ -708,7 +825,7 @@ RTCM 流量：
 
 ------------------------------------------------------------------------
 
-# 15. 部署架构
+# 16. 部署架构
 
     Internet
        │
@@ -728,23 +845,72 @@ RTCM 流量：
 
 ------------------------------------------------------------------------
 
-# 16. 实现规模
+# 17. 优雅停机
 
-  模块            代码量
-  --------------- ---------
-  NTRIP协议解析   \~300行
-  Caster核心      \~600行
-  账号系统        \~400行
-  API             \~400行
-  统计与工具      \~200行
+收到 `SIGTERM` / `SIGINT` 后的关闭顺序：
 
-总计：
+    信号捕获
+       ↓
+    停止 Accept 新连接（NTRIP + Admin）
+       ↓
+    通知所有 Source 停止读循环（关闭 Source.Done）
+       ↓
+    等待所有 Source readLoop 退出
+       ↓
+    通知所有 Client 停止写循环（关闭 Client.Done）
+       ↓
+    等待所有 Client writeLoop 退出
+       ↓
+    关闭数据库连接
+       ↓
+    进程退出
 
-**约 2000 行 Go 代码**
+示例骨架：
+
+    func (s *Server) Shutdown(ctx context.Context) error {
+        s.listener.Close()
+        s.adminListener.Close()
+
+        s.mountManager.DisconnectAll()
+
+        select {
+        case <-s.allGoroutinesDone:
+            return nil
+        case <-ctx.Done():
+            return ctx.Err()
+        }
+    }
+
+工程注意点：
+
+-   设置一个停机超时（例如 10 秒），超时后强制退出，避免挂死。
+-   `DisconnectAll()` 遍历所有 Mountpoint，依次调用 Source/Client 的关闭方法。
+-   用 `sync.WaitGroup` 或类似机制追踪所有 readLoop / writeLoop goroutine 的退出。
+-   Admin HTTP Server 使用 `http.Server.Shutdown(ctx)` 即可。
+-   日志中明确打印"开始停机"和"停机完成"，便于排查是否有 goroutine 泄漏。
 
 ------------------------------------------------------------------------
 
-# 17. 未来可扩展
+# 18. 实现规模
+
+  模块               代码量
+  ---------------   ---------
+  NTRIP协议解析      \~400行
+  RTCM Framing      \~150行
+  Caster核心/Fanout  \~800行
+  连接限流           \~100行
+  账号系统           \~400行
+  API                \~500行
+  统计与工具         \~300行
+  优雅停机           \~150行
+
+总计：
+
+**约 2800 行 Go 代码**
+
+------------------------------------------------------------------------
+
+# 19. 未来可扩展
 
 -   TLS NTRIP
 -   集群 Caster

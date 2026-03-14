@@ -1,0 +1,122 @@
+---
+alwaysApply: true
+---
+
+# NTRIP Caster 项目约定
+
+本规则在编写/修改本仓库代码时始终生效，用于统一代码风格、架构约束与文档位置。
+
+---
+
+## 1. 技术栈与目录
+
+- **语言**: Go 1.26+，遵循 [Effective Go](https://go.dev/doc/effective_go) 与标准库惯例。
+- **布局**: 严格按 `docs/go_ntrip_caster_architecture.md` 中「项目目录结构」执行：
+  - `cmd/caster/`：入口，仅 `main.go` 与极简胶水逻辑。
+  - `internal/`：业务与 NTRIP 逻辑，按模块分子包（caster、mountpoint、source、client、rtcm、limiter、auth、account、sourcetable、api、metrics）。
+  - `pkg/`：可被外部复用的包（如 logger），仅放真正可导出、无业务耦合的代码。
+- **依赖**: 新增依赖前先 `go get` 并运行 `go mod tidy`，保持 `go.mod` / `go.sum` 干净。
+
+---
+
+## 2. 代码风格
+
+### 2.1 通用
+
+- **格式化**: 使用 `gofmt` 或 `goimports`，提交前必须通过。
+- **命名**: 见名知意；包名小写、单词；接口名单词或 `Xxxer`（如 `io.Reader`）；避免缩写除非广为人知（如 `id`、`url`）。
+- **注释**: 导出符号必须有 godoc 注释（`// Xxx 做某事`），复杂逻辑在关键分支加行内注释；注释用中文或英文均可，同一文件内风格一致。
+
+### 2.2 错误与日志
+
+- **错误**: 必须处理所有 `err`；向上层返回时用 `fmt.Errorf("...: %w", err)` 包装，保留错误链以便 `errors.Is` / `errors.As`。
+- **日志**: 统一使用 `pkg/logger`（或项目约定的 logger 包）；不直接 `log.Print`；敏感信息（密码、token）不得写入日志。
+
+### 2.3 并发与资源
+
+- **并发**: 优先用 `sync.Mutex`、channel 或 `errgroup` 等标准方式；共享数据明确加锁或通过 channel 串行化，避免 data race。
+- **资源**: 打开的文件、连接、goroutine 必须有明确关闭/退出路径（`defer` 或生命周期管理）。
+
+### 2.4 API 与类型
+
+- **接口**: "接受 interface，返回 struct"；接口定义放在使用方包或小接口（如 `io.Reader`），避免大而全的 interface。
+- **零值**: 结构体尽量设计为零值可用，避免必须 `NewXxx()` 才能用。
+
+---
+
+## 3. 架构硬约束
+
+以下规则来自 `docs/go_ntrip_caster_architecture.md`，生成代码时**必须遵守**，不可违反：
+
+### 3.1 RTCM Fanout
+
+- **禁止 per-client payload copy**：RTCM 包在 Source 入站时只拷贝一次（framing 阶段产出），广播时所有 Client 共享同一个 `*RTCMPacket`。
+- **禁止在广播路径关闭 `WriteChan`**：否则后续广播会向已关闭 channel 发送，导致 panic。
+- **慢客户端踢除必须用 CAS 防抖**：通过 `MarkSlowAndKick()` + `atomic.CompareAndSwapInt32` 避免广播高峰期重复启动大量 goroutine。
+- **`RTCMPacket.Data` 创建后不可修改**：这是共享广播的前提。
+
+### 3.2 Mountpoint Snapshot
+
+- **读路径无锁，写路径串行**：广播用 `atomic.Value` 加载只读 `[]*Client` 快照；增删 client 持 `sync.Mutex` 并重建快照。
+- **禁止用 `append(old, c)` 更新快照**：`append` 可能复用旧底层数组，破坏快照不可变性。必须 `make` 新 slice + `copy`。
+- **`removeFromMount()` 是从 MountPoint 删除 client 的唯一入口**：由 `writeLoop` 退出时 `defer` 调用，不要在 `Broadcast()` 中直接删。
+
+### 3.3 RTCM Framing
+
+- **Source 读循环必须先做 RTCM3 framing**：TCP 不保消息边界，不能把 `Conn.Read()` 返回的原始切片直接广播。
+- 使用 `internal/rtcm.RTCMFramer` 按 `0xD3 + length + payload + CRC` 解析完整包后再送入 fanout。
+
+### 3.4 NTRIP 协议兼容
+
+- Rover 挂载成功响应：`ICY 200 OK\r\n\r\n`
+- Source 注册成功响应：Rev1 `ICY 200 OK\r\n\r\n`，Rev2 `HTTP/1.1 200 OK\r\n\r\n`
+- 必须区分 `GET /`（Sourcetable）和 `GET /mountpoint`（Rover 挂载）。
+- Source 连接需识别 `SOURCE`（Rev1）和 `POST`（Rev2）两种方式。
+
+### 3.5 连接与生命周期
+
+- 每个 `*net.TCPConn` 应设置 `SetNoDelay(true)`。
+- 每个 Client 写操作必须设置 `SetWriteDeadline`。
+- Source / Client 关闭时必须保证关联 goroutine 全部收敛退出（通过 `Done` channel + `CloseOnce`）。
+- 删除 Mountpoint 时：先禁用新连接 → 摘 Source → 断 Clients → 从 Manager 移除。
+
+### 3.6 连接限流
+
+- TCP Accept 之后、协议解析之前，检查 per-IP 并发连接数，超限直接关闭。
+
+---
+
+## 4. 测试
+
+- **提交前**: 运行 `go build ./...` 与 `go vet ./...` 与 `go test ./...`，确保通过。
+- **fanout 路径**: 必须有并发测试，覆盖慢客户端踢除、snapshot 一致性、广播不 panic。
+- **RTCM framing**: 必须有边界测试，覆盖不完整包、多包粘连、非 0xD3 开头的垃圾字节。
+- **连接生命周期**: 测试 Source 断线后 goroutine 是否全部退出，避免泄漏。
+
+---
+
+## 5. 文档存放
+
+- **设计 / 架构 / 协议说明**: 放在 **`docs/`** 目录下，格式为 Markdown。
+  - 主架构文档：`docs/go_ntrip_caster_architecture.md`，新增设计可在此文件内增节或新建 `docs/xxx_design.md` 并在此处加链接。
+- **API 文档**: 若为 HTTP API，可在 `docs/` 下增加 `api.md` 或按模块 `docs/api_*.md`；若使用 OpenAPI/Swagger，将 spec 放在 `docs/` 并注明路径。
+- **README**: 项目根目录 `README.md` 负责项目简介、构建与运行方式、配置说明；不把冗长设计细节放进 README，用链接指向 `docs/`。
+
+---
+
+## 6. 提交
+
+- **提交信息**: 简洁说明改动内容或目的，可带前缀（如 `fix:`, `feat:`, `docs:`）以便后续查历史。
+
+---
+
+## 7. 与 AI 协作时的提醒
+
+- 写新代码前先看 `docs/go_ntrip_caster_architecture.md`，特别是数据模型（第 4 节）、fanout 设计（第 7 节）、协议响应格式（第 5 节）。
+- 新文件必须放到架构文档约定的 `internal/` 子包中，不要自行创建新的顶层目录。
+- 生成代码时必须遵守上面「第 3 节 架构硬约束」，尤其是 fanout 和 snapshot 相关的并发规则。
+- 新增或大改功能时，如涉及架构/协议变更，在 `docs/` 中补充或更新设计说明。
+
+## 其他
+
+- 永远使用中文回答

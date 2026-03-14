@@ -1,4 +1,5 @@
-.PHONY: dev-frontend dev-backend build build-frontend build-backend clean
+.PHONY: dev-frontend dev-backend build build-frontend build-backend clean \
+       simbase simrover
 
 dev-frontend:
 	cd web && pnpm dev
@@ -13,6 +14,14 @@ build-frontend:
 
 build-backend:
 	go build -o bin/caster ./cmd/caster
+	go build -o bin/simbase ./cmd/simbase
+	go build -o bin/simrover ./cmd/simrover
+
+simbase:
+	go run ./cmd/simbase $(ARGS)
+
+simrover:
+	go run ./cmd/simrover $(ARGS)
 
 clean:
 	rm -rf bin/ internal/web/dist/

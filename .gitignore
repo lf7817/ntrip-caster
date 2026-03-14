@@ -12,8 +12,9 @@
 *.test
 *.out
 
-# Go binary（你的服务）
-
+# Go binary（项目产物）
+/bin/caster
+caster
 
 # =========================
 
@@ -49,6 +50,16 @@ config.local.yaml
 config.local.yml
 config.dev.yaml
 config.dev.yml
+
+# =========================
+
+# Database (SQLite runtime)
+
+# =========================
+
+*.db
+*.db-shm
+*.db-wal
 
 # =========================
 
@@ -95,3 +106,11 @@ coverage.html
 __pycache__
 
 .shared
+
+# =========================
+
+# Cursor / AI
+
+# =========================
+
+.cursor/plans/

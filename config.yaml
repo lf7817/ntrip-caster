@@ -1,0 +1,21 @@
+server:
+  listen: ":2101"
+  admin_listen: ":8080"
+
+auth:
+  enabled: true
+  admin_mode: session
+  ntrip_source_auth: user_binding
+  ntrip_rover_auth: basic
+
+database:
+  type: sqlite
+  path: caster.db
+
+limits:
+  max_clients: 5000
+  max_conn_per_ip: 10
+
+mountpoint_defaults:
+  write_queue: 64
+  write_timeout: 3s

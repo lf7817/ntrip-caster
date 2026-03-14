@@ -114,3 +114,13 @@ __pycache__
 # =========================
 
 .cursor/plans/
+
+# =========================
+
+# Frontend build output
+
+# =========================
+
+internal/web/dist/
+!internal/web/dist/.gitkeep
+web/node_modules/

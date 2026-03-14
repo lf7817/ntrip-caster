@@ -266,6 +266,55 @@ func (s *Service) AddBinding(userID, mountpointID int64, permission string) erro
 	return nil
 }
 
+// ListBindings returns all bindings with joined user/mountpoint names.
+func (s *Service) ListBindings() ([]*Binding, error) {
+	rows, err := s.db.Query(`
+		SELECT b.id, b.user_id, b.mountpoint_id, b.permission, u.username, m.name
+		FROM user_mountpoint_bindings b
+		JOIN users u ON b.user_id = u.id
+		JOIN mountpoints m ON b.mountpoint_id = m.id
+		ORDER BY u.username, m.name`)
+	if err != nil {
+		return nil, fmt.Errorf("list bindings: %w", err)
+	}
+	defer rows.Close()
+
+	var list []*Binding
+	for rows.Next() {
+		b := &Binding{}
+		if err := rows.Scan(&b.ID, &b.UserID, &b.MountPointID, &b.Permission, &b.Username, &b.MountPointName); err != nil {
+			return nil, fmt.Errorf("scan binding: %w", err)
+		}
+		list = append(list, b)
+	}
+	return list, rows.Err()
+}
+
+// ListBindingsByUser returns all bindings for a specific user.
+func (s *Service) ListBindingsByUser(userID int64) ([]*Binding, error) {
+	rows, err := s.db.Query(`
+		SELECT b.id, b.user_id, b.mountpoint_id, b.permission, u.username, m.name
+		FROM user_mountpoint_bindings b
+		JOIN users u ON b.user_id = u.id
+		JOIN mountpoints m ON b.mountpoint_id = m.id
+		WHERE b.user_id = ?
+		ORDER BY m.name`, userID)
+	if err != nil {
+		return nil, fmt.Errorf("list user bindings: %w", err)
+	}
+	defer rows.Close()
+
+	var list []*Binding
+	for rows.Next() {
+		b := &Binding{}
+		if err := rows.Scan(&b.ID, &b.UserID, &b.MountPointID, &b.Permission, &b.Username, &b.MountPointName); err != nil {
+			return nil, fmt.Errorf("scan binding: %w", err)
+		}
+		list = append(list, b)
+	}
+	return list, rows.Err()
+}
+
 // HasBinding checks if a user has a specific permission on a mountpoint.
 func (s *Service) HasBinding(userID int64, mountpointName, permission string) (bool, error) {
 	var count int

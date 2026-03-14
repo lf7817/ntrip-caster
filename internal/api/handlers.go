@@ -400,6 +400,66 @@ func (h *Handlers) Stats(w http.ResponseWriter, r *http.Request) {
 	jsonOK(w, result)
 }
 
+// --- Bindings ---
+
+func (h *Handlers) ListBindings(w http.ResponseWriter, r *http.Request) {
+	bindings, err := h.acctSvc.ListBindings()
+	if err != nil {
+		jsonError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	jsonOK(w, bindings)
+}
+
+func (h *Handlers) ListUserBindings(w http.ResponseWriter, r *http.Request) {
+	id, ok := parseID(r.PathValue("id"))
+	if !ok {
+		jsonError(w, "invalid user id", http.StatusBadRequest)
+		return
+	}
+	bindings, err := h.acctSvc.ListBindingsByUser(id)
+	if err != nil {
+		jsonError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	jsonOK(w, bindings)
+}
+
+func (h *Handlers) CreateBinding(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		UserID       int64  `json:"user_id"`
+		MountPointID int64  `json:"mountpoint_id"`
+		Permission   string `json:"permission"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	if req.UserID == 0 || req.MountPointID == 0 || req.Permission == "" {
+		jsonError(w, "user_id, mountpoint_id, and permission are required", http.StatusBadRequest)
+		return
+	}
+
+	if err := h.acctSvc.AddBinding(req.UserID, req.MountPointID, req.Permission); err != nil {
+		jsonError(w, err.Error(), http.StatusConflict)
+		return
+	}
+	jsonOK(w, map[string]string{"status": "ok"})
+}
+
+func (h *Handlers) DeleteBinding(w http.ResponseWriter, r *http.Request) {
+	id, ok := parseID(r.PathValue("id"))
+	if !ok {
+		jsonError(w, "invalid binding id", http.StatusBadRequest)
+		return
+	}
+	if err := h.acctSvc.RemoveBinding(id); err != nil {
+		jsonError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	jsonOK(w, map[string]string{"status": "ok"})
+}
+
 // --- helpers ---
 
 func jsonOK(w http.ResponseWriter, data any) {

@@ -24,10 +24,12 @@ type MountPointRow struct {
 
 // Binding represents a user-mountpoint permission binding.
 type Binding struct {
-	ID          int64  `json:"id"`
-	UserID      int64  `json:"user_id"`
-	MountPointID int64 `json:"mountpoint_id"`
-	Permission  string `json:"permission"` // publish / subscribe / admin
+	ID             int64  `json:"id"`
+	UserID         int64  `json:"user_id"`
+	MountPointID   int64  `json:"mountpoint_id"`
+	Permission     string `json:"permission"` // publish / subscribe / admin
+	Username       string `json:"username,omitempty"`
+	MountPointName string `json:"mountpoint_name,omitempty"`
 }
 
 // Roles

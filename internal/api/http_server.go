@@ -2,12 +2,14 @@ package api
 
 import (
 	"context"
+	"io/fs"
 	"log/slog"
 	"net/http"
 
 	"ntrip-caster/internal/account"
 	"ntrip-caster/internal/config"
 	"ntrip-caster/internal/mountpoint"
+	"ntrip-caster/internal/web"
 )
 
 // HTTPServer is the Admin API server.
@@ -46,7 +48,17 @@ func NewHTTPServer(cfg *config.Config, acctSvc *account.Service, mgr *mountpoint
 
 	protected.HandleFunc("GET /api/stats", h.Stats)
 
+	protected.HandleFunc("GET /api/bindings", h.ListBindings)
+	protected.HandleFunc("GET /api/users/{id}/bindings", h.ListUserBindings)
+	protected.HandleFunc("POST /api/bindings", h.CreateBinding)
+	protected.HandleFunc("DELETE /api/bindings/{id}", h.DeleteBinding)
+
 	mux.Handle("/api/", sess.AuthMiddleware(protected))
+
+	// Serve embedded frontend (SPA with fallback to index.html)
+	distFS, _ := fs.Sub(web.Assets, "dist")
+	fileServer := http.FileServer(http.FS(distFS))
+	mux.Handle("/", spaHandler(fileServer, distFS))
 
 	return &HTTPServer{
 		srv: &http.Server{
@@ -70,4 +82,21 @@ func (s *HTTPServer) ListenAndServe() error {
 // Shutdown gracefully shuts down the admin HTTP server.
 func (s *HTTPServer) Shutdown(ctx context.Context) error {
 	return s.srv.Shutdown(ctx)
+}
+
+// spaHandler serves static files and falls back to index.html for SPA routing.
+func spaHandler(fileServer http.Handler, fsys fs.FS) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path := r.URL.Path
+		if path == "/" {
+			path = "index.html"
+		} else {
+			path = path[1:]
+		}
+
+		if _, err := fs.Stat(fsys, path); err != nil {
+			r.URL.Path = "/"
+		}
+		fileServer.ServeHTTP(w, r)
+	})
 }

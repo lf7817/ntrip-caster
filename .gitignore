@@ -17,6 +17,7 @@
 caster
 /simbase
 /simrover
+/testenv
 
 # =========================
 
@@ -126,3 +127,12 @@ __pycache__
 internal/web/dist/
 !internal/web/dist/.gitkeep
 web/node_modules/
+
+# =========================
+# Runtime data
+# =========================
+*.db
+*.db-wal
+*.db-shm
+config_test.yaml
+cookies.txt

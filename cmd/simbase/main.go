@@ -1,5 +1,10 @@
-// Command simbase simulates an NTRIP base station (source) that connects
-// to the caster and streams synthetic RTCM3 frames at a configurable rate.
+// Command simbase simulates one or many NTRIP base stations (sources) that
+// connect to the caster and stream synthetic RTCM3 frames.
+//
+// Single base:   simbase -mount RTCM_01 -user base -pass test
+// Multi base:    simbase -count 5 -mount-prefix BENCH -user base -pass test
+//
+// In multi mode, base i connects to mountpoint "{prefix}_{i}" (e.g. BENCH_0 … BENCH_4).
 package main
 
 import (
@@ -13,87 +18,167 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
 )
 
+var (
+	gTotalBytes int64
+	gTotalPkts  int64
+	gConnected  int64
+	gFailed     int64
+)
+
 func main() {
 	addr := flag.String("addr", "127.0.0.1:2101", "caster address")
-	mount := flag.String("mount", "TEST", "mountpoint name")
+	mount := flag.String("mount", "", "mountpoint name (single-base mode)")
+	mountPrefix := flag.String("mount-prefix", "BENCH", "mountpoint name prefix (multi-base mode, e.g. BENCH → BENCH_0, BENCH_1, ...)")
 	user := flag.String("user", "", "username for Basic Auth (Rev2)")
 	pass := flag.String("pass", "", "password")
 	rev := flag.Int("rev", 2, "NTRIP revision: 1 or 2")
 	interval := flag.Duration("interval", 1*time.Second, "send interval per RTCM frame")
 	msgType := flag.Int("msgtype", 1005, "RTCM3 message type to simulate")
 	payloadSize := flag.Int("size", 19, "RTCM3 payload size in bytes")
+	count := flag.Int("count", 1, "number of base stations (each on its own mountpoint)")
 	flag.Parse()
 
-	conn, err := net.DialTimeout("tcp", *addr, 5*time.Second)
+	// Build mountpoint name list.
+	mounts := buildMountList(*mount, *mountPrefix, *count)
+
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+
+	stopCh := make(chan struct{})
+	go func() {
+		<-sigCh
+		close(stopCh)
+	}()
+
+	start := time.Now()
+
+	go func() {
+		ticker := time.NewTicker(5 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-stopCh:
+				return
+			case <-ticker.C:
+				printStats(start)
+			}
+		}
+	}()
+
+	var wg sync.WaitGroup
+
+	if *count == 1 {
+		log.Printf("starting 1 base → %s/%s", *addr, mounts[0])
+	} else {
+		log.Printf("starting %d bases → %s/{%s … %s}", *count, *addr, mounts[0], mounts[len(mounts)-1])
+	}
+
+	for i, mp := range mounts {
+		wg.Add(1)
+		go func(id int, mountName string) {
+			defer wg.Done()
+			runBase(id, *addr, mountName, *user, *pass, *rev, *interval, uint16(*msgType), *payloadSize, stopCh)
+		}(i, mp)
+	}
+
+	<-stopCh
+	wg.Wait()
+	printStats(start)
+	log.Println("done.")
+}
+
+func buildMountList(mount, prefix string, count int) []string {
+	if count == 1 && mount != "" {
+		return []string{mount}
+	}
+	if count == 1 && mount == "" {
+		return []string{prefix + "_0"}
+	}
+	mounts := make([]string, count)
+	for i := range mounts {
+		mounts[i] = fmt.Sprintf("%s_%d", prefix, i)
+	}
+	return mounts
+}
+
+func runBase(id int, addr, mount, user, pass string, rev int, interval time.Duration, msgType uint16, payloadSize int, stopCh <-chan struct{}) {
+	label := fmt.Sprintf("[base-%d/%s]", id, mount)
+
+	conn, err := net.DialTimeout("tcp", addr, 10*time.Second)
 	if err != nil {
-		log.Fatalf("dial %s: %v", *addr, err)
+		atomic.AddInt64(&gFailed, 1)
+		log.Printf("%s dial failed: %v", label, err)
+		return
 	}
 	defer conn.Close()
 
-	if err := sendSourceRequest(conn, *rev, *mount, *user, *pass); err != nil {
-		log.Fatalf("send request: %v", err)
+	if err := sendSourceRequest(conn, rev, mount, user, pass); err != nil {
+		atomic.AddInt64(&gFailed, 1)
+		log.Printf("%s send request failed: %v", label, err)
+		return
 	}
 
 	resp := make([]byte, 4096)
 	_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
 	n, err := conn.Read(resp)
 	if err != nil {
-		log.Fatalf("read response: %v", err)
+		atomic.AddInt64(&gFailed, 1)
+		log.Printf("%s read response failed: %v", label, err)
+		return
 	}
 	_ = conn.SetReadDeadline(time.Time{})
 
 	respStr := string(resp[:n])
 	if !strings.Contains(respStr, "200") {
-		log.Fatalf("caster rejected connection: %s", strings.TrimSpace(respStr))
+		atomic.AddInt64(&gFailed, 1)
+		log.Printf("%s rejected: %s", label, strings.TrimSpace(respStr))
+		return
 	}
-	log.Printf("connected to %s/%s (%s)", *addr, *mount, strings.TrimSpace(respStr))
 
-	var totalBytes int64
-	var totalPkts int64
+	atomic.AddInt64(&gConnected, 1)
+	log.Printf("%s connected", label)
 
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	// close conn when signal received
+	go func() {
+		<-stopCh
+		conn.Close()
+	}()
 
-	ticker := time.NewTicker(*interval)
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
-
-	statTicker := time.NewTicker(5 * time.Second)
-	defer statTicker.Stop()
-
-	start := time.Now()
 
 	for {
 		select {
-		case <-sigCh:
-			elapsed := time.Since(start)
-			log.Printf("stopped. sent %d packets, %d bytes in %s (%.1f B/s)",
-				totalPkts, totalBytes, elapsed.Round(time.Millisecond),
-				float64(totalBytes)/elapsed.Seconds())
+		case <-stopCh:
 			return
-
 		case <-ticker.C:
-			frame := buildRTCM3Frame(uint16(*msgType), *payloadSize)
+			frame := buildRTCM3Frame(msgType, payloadSize)
 			if _, err := conn.Write(frame); err != nil {
-				log.Fatalf("write: %v", err)
+				log.Printf("%s write error: %v", label, err)
+				return
 			}
-			atomic.AddInt64(&totalBytes, int64(len(frame)))
-			atomic.AddInt64(&totalPkts, 1)
-
-		case <-statTicker.C:
-			elapsed := time.Since(start)
-			pkts := atomic.LoadInt64(&totalPkts)
-			bytes := atomic.LoadInt64(&totalBytes)
-			log.Printf("[stats] %d pkts, %d bytes, %.1f B/s, running %s",
-				pkts, bytes,
-				float64(bytes)/elapsed.Seconds(),
-				elapsed.Round(time.Second))
+			atomic.AddInt64(&gTotalBytes, int64(len(frame)))
+			atomic.AddInt64(&gTotalPkts, 1)
 		}
 	}
+}
+
+func printStats(start time.Time) {
+	elapsed := time.Since(start)
+	bytes := atomic.LoadInt64(&gTotalBytes)
+	log.Printf("[aggregate] bases connected=%d failed=%d | pkts=%d bytes=%d rate=%.1f KB/s | %s",
+		atomic.LoadInt64(&gConnected),
+		atomic.LoadInt64(&gFailed),
+		atomic.LoadInt64(&gTotalPkts),
+		bytes,
+		float64(bytes)/1024/elapsed.Seconds(),
+		elapsed.Round(time.Second))
 }
 
 func sendSourceRequest(conn net.Conn, rev int, mount, user, pass string) error {
@@ -116,10 +201,6 @@ func sendSourceRequest(conn net.Conn, rev int, mount, user, pass string) error {
 }
 
 // buildRTCM3Frame creates a valid RTCM3 frame with proper CRC-24Q.
-//
-// Frame layout:
-//
-//	[0xD3] [reserved(6b)+length(10b)] [payload...] [CRC-24Q(3B)]
 func buildRTCM3Frame(msgType uint16, payloadLen int) []byte {
 	if payloadLen < 2 {
 		payloadLen = 2
@@ -134,7 +215,6 @@ func buildRTCM3Frame(msgType uint16, payloadLen int) []byte {
 	frame[1] = byte((payloadLen >> 8) & 0x03)
 	frame[2] = byte(payloadLen & 0xFF)
 
-	// First 12 bits of payload = message type number
 	frame[3] = byte(msgType >> 4)
 	frame[4] = byte(msgType<<4) | byte(rand.Intn(16))
 
@@ -150,7 +230,6 @@ func buildRTCM3Frame(msgType uint16, payloadLen int) []byte {
 	return frame
 }
 
-// crc24q computes the CRC-24Q checksum used by RTCM3.
 func crc24q(data []byte) uint32 {
 	var crc uint32
 	for _, b := range data {

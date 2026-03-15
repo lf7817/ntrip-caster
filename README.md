@@ -142,8 +142,11 @@ curl -b cookies.txt http://localhost:8080/api/stats
 
 ```
 ntrip-caster/
-├── cmd/caster/              # 程序入口
-│   └── main.go
+├── cmd/
+│   ├── caster/              # 主程序入口
+│   ├── simbase/             # 模拟基站（压测工具）
+│   ├── simrover/            # 模拟流动站（压测工具）
+│   └── testenv/             # 一键初始化测试环境
 ├── internal/
 │   ├── api/                 # Admin REST API（handlers、session 中间件）
 │   ├── account/             # 用户与挂载点持久化（SQLite）
@@ -163,6 +166,39 @@ ntrip-caster/
 ├── config.yaml              # 默认配置文件
 └── go.mod
 ```
+
+## 测试与压测
+
+项目内置了完整的模拟工具链，无需真实 GNSS 硬件即可进行端到端测试和压力测试。
+
+### 一键搭建测试环境
+
+```bash
+make test-env       # 生成测试配置 + 数据库 + 账号 + 挂载点
+make test-caster    # 启动 caster（使用测试配置）
+```
+
+### 功能验证
+
+```bash
+go run ./cmd/simbase  -mount BENCH              # 终端 2：模拟基站推流
+go run ./cmd/simrover -mount BENCH              # 终端 3：模拟 rover 收流
+```
+
+### 压力测试
+
+```bash
+# 1 Base + 5000 Rovers
+go run ./cmd/simbase  -mount BENCH -interval 100ms -size 200
+go run ./cmd/simrover -mount BENCH -count 5000 -ramp 2ms
+
+# 5 Bases + 5000 Rovers（多挂载点）
+go run ./cmd/testenv -mounts 5 && make test-caster
+go run ./cmd/simbase  -count 5 -mount-prefix BENCH -interval 100ms
+go run ./cmd/simrover -mounts BENCH_0,BENCH_1,BENCH_2,BENCH_3,BENCH_4 -count 5000 -ramp 2ms
+```
+
+完整的测试步骤、参数说明、监控方法和调优指引详见 [`docs/testing.md`](docs/testing.md)。
 
 ## 性能目标
 

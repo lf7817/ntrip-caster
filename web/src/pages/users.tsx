@@ -8,6 +8,7 @@ import {
   useUpdateUser,
   useDeleteUser,
   useUserBindings,
+  useBindings,
   useMountpoints,
   useCreateBinding,
   useDeleteBinding,
@@ -60,9 +61,17 @@ const roleBadgeVariant: Record<string, "default" | "secondary" | "outline"> = {
 
 export default function UsersPage() {
   const { data: users, isLoading } = useUsers()
+  const { data: allBindings } = useBindings()
   const createUser = useCreateUser()
   const updateUser = useUpdateUser()
   const deleteUser = useDeleteUser()
+
+  const userMountpointMap = new Map<number, string[]>()
+  allBindings?.forEach((b) => {
+    const list = userMountpointMap.get(b.user_id) ?? []
+    if (b.mountpoint_name) list.push(b.mountpoint_name)
+    userMountpointMap.set(b.user_id, list)
+  })
 
   const [createOpen, setCreateOpen] = useState(false)
   const [editUser, setEditUser] = useState<User | null>(null)
@@ -159,6 +168,7 @@ export default function UsersPage() {
                 <TableHead className="w-16">ID</TableHead>
                 <TableHead>用户名</TableHead>
                 <TableHead>角色</TableHead>
+                <TableHead>挂载点</TableHead>
                 <TableHead>状态</TableHead>
                 <TableHead className="text-right">操作</TableHead>
               </TableRow>
@@ -166,7 +176,7 @@ export default function UsersPage() {
             <TableBody>
               {!users?.length ? (
                 <TableRow>
-                  <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
+                  <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
                     暂无用户
                   </TableCell>
                 </TableRow>
@@ -179,6 +189,17 @@ export default function UsersPage() {
                       <Badge variant={roleBadgeVariant[user.role] ?? "outline"}>
                         {user.role}
                       </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex flex-wrap gap-1">
+                        {(userMountpointMap.get(user.id) ?? []).length > 0
+                          ? userMountpointMap.get(user.id)!.map((name) => (
+                              <Badge key={name} variant="outline" className="text-xs">
+                                {name}
+                              </Badge>
+                            ))
+                          : <span className="text-muted-foreground text-xs">—</span>}
+                      </div>
                     </TableCell>
                     <TableCell>
                       <Badge variant={user.enabled ? "default" : "secondary"}>
@@ -313,20 +334,21 @@ function UserBindingsSection({ userId }: { userId: number }) {
   const createBinding = useCreateBinding()
   const deleteBinding = useDeleteBinding()
 
-  const [addMpId, setAddMpId] = useState("")
+  const [addMpName, setAddMpName] = useState("")
 
   const boundMpIds = new Set(bindings?.map((b) => b.mountpoint_id) ?? [])
   const availableMountpoints = mountpoints?.filter((mp) => !boundMpIds.has(mp.id)) ?? []
 
   async function handleAdd() {
-    if (!addMpId) return
+    const selectedMp = availableMountpoints.find((mp) => mp.name === addMpName)
+    if (!selectedMp) return
     try {
       await createBinding.mutateAsync({
         user_id: userId,
-        mountpoint_id: Number(addMpId),
+        mountpoint_id: selectedMp.id,
       })
       toast.success("绑定添加成功")
-      setAddMpId("")
+      setAddMpName("")
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "添加失败")
     }
@@ -377,13 +399,13 @@ function UserBindingsSection({ userId }: { userId: number }) {
 
       <div className="flex items-end gap-2">
         <div className="flex-1">
-          <Select value={addMpId} onValueChange={(v) => v && setAddMpId(v)}>
+          <Select value={addMpName} onValueChange={(v) => v && setAddMpName(v)}>
             <SelectTrigger className="h-8 text-xs">
               <SelectValue placeholder="选择挂载点" />
             </SelectTrigger>
             <SelectContent>
               {availableMountpoints.map((mp) => (
-                <SelectItem key={mp.id} value={String(mp.id)}>
+                <SelectItem key={mp.id} value={mp.name}>
                   {mp.name}
                 </SelectItem>
               ))}
@@ -394,7 +416,7 @@ function UserBindingsSection({ userId }: { userId: number }) {
           size="sm"
           className="h-8"
           onClick={handleAdd}
-          disabled={!addMpId || createBinding.isPending}
+          disabled={!addMpName || createBinding.isPending}
         >
           <Plus className="h-3.5 w-3.5" />
         </Button>

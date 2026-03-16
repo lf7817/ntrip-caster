@@ -39,6 +39,15 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+
+const FORMAT_OPTIONS = ["RTCM3", "RTCM 3.2", "RTCM 3.3"] as const
 
 export default function MountpointsPage() {
   const { data: mounts, isLoading } = useMountpoints()
@@ -220,7 +229,18 @@ export default function MountpointsPage() {
             </div>
             <div className="space-y-2">
               <Label>格式</Label>
-              <Input value={newFormat} onChange={(e) => setNewFormat(e.target.value)} placeholder="RTCM3" />
+              <Select value={newFormat} onValueChange={(v) => v && setNewFormat(v)}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="选择格式" />
+                </SelectTrigger>
+                <SelectContent>
+                  {FORMAT_OPTIONS.map((fmt) => (
+                    <SelectItem key={fmt} value={fmt}>
+                      {fmt}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </div>
           <DialogFooter>
@@ -245,7 +265,18 @@ export default function MountpointsPage() {
             </div>
             <div className="space-y-2">
               <Label>格式</Label>
-              <Input value={editFormat} onChange={(e) => setEditFormat(e.target.value)} />
+              <Select value={editFormat} onValueChange={(v) => v && setEditFormat(v)}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="选择格式" />
+                </SelectTrigger>
+                <SelectContent>
+                  {FORMAT_OPTIONS.map((fmt) => (
+                    <SelectItem key={fmt} value={fmt}>
+                      {fmt}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="flex items-center justify-between">
               <Label>启用</Label>

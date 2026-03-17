@@ -37,12 +37,14 @@ export interface CreateMountpointReq {
   name: string
   description: string
   format?: string
+  source_secret?: string
 }
 
 export interface UpdateMountpointReq {
   description?: string
   format?: string
   enabled?: boolean
+  source_secret?: string
 }
 
 export interface Binding {

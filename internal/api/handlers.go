@@ -201,9 +201,10 @@ func (h *Handlers) ListMountpoints(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handlers) CreateMountpoint(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Name        string `json:"name"`
-		Description string `json:"description"`
-		Format      string `json:"format"`
+		Name         string `json:"name"`
+		Description  string `json:"description"`
+		Format       string `json:"format"`
+		SourceSecret string `json:"source_secret,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		jsonError(w, "invalid request body", http.StatusBadRequest)
@@ -223,6 +224,13 @@ func (h *Handlers) CreateMountpoint(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if req.SourceSecret != "" {
+		if err := h.acctSvc.SetMountPointSourceSecret(row.ID, req.SourceSecret); err != nil {
+			jsonError(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
+
 	wq := h.cfg.MountpointDefaults.WriteQueue
 	wt := h.cfg.MountpointDefaults.WriteTimeout
 	_, _ = h.mgr.Create(req.Name, req.Description, req.Format, wq, wt)
@@ -238,9 +246,10 @@ func (h *Handlers) UpdateMountpoint(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		Description string `json:"description"`
-		Format      string `json:"format"`
-		Enabled     *bool  `json:"enabled"`
+		Description  string  `json:"description"`
+		Format       string  `json:"format"`
+		Enabled      *bool   `json:"enabled"`
+		SourceSecret *string `json:"source_secret,omitempty"` // nil: unchanged, "": clear, other: set
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		jsonError(w, "invalid request body", http.StatusBadRequest)
@@ -269,6 +278,13 @@ func (h *Handlers) UpdateMountpoint(w http.ResponseWriter, r *http.Request) {
 	if err := h.acctSvc.UpdateMountPointRow(id, desc, format, enabled); err != nil {
 		jsonError(w, err.Error(), http.StatusInternalServerError)
 		return
+	}
+
+	if req.SourceSecret != nil {
+		if err := h.acctSvc.SetMountPointSourceSecret(id, *req.SourceSecret); err != nil {
+			jsonError(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 	}
 
 	wq := h.cfg.MountpointDefaults.WriteQueue

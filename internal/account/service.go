@@ -157,6 +157,53 @@ func (s *Service) CreateMountPointRow(name, description, format string) (*MountP
 	return &MountPointRow{ID: id, Name: name, Description: description, Format: format, Enabled: true, SourceAuthMode: "user_binding"}, nil
 }
 
+// VerifyMountPointSourceSecret checks whether the given secret matches the
+// mountpoint's stored source_secret_hash. If no secret is configured, it
+// returns false.
+func (s *Service) VerifyMountPointSourceSecret(mountpointName, secret string) (bool, error) {
+	if mountpointName == "" || secret == "" {
+		return false, nil
+	}
+	var hash sql.NullString
+	if err := s.db.QueryRow(
+		"SELECT source_secret_hash FROM mountpoints WHERE name = ?",
+		mountpointName,
+	).Scan(&hash); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, nil
+		}
+		return false, fmt.Errorf("query mountpoint source secret: %w", err)
+	}
+	if !hash.Valid || hash.String == "" {
+		return false, nil
+	}
+	if err := bcrypt.CompareHashAndPassword([]byte(hash.String), []byte(secret)); err != nil {
+		return false, nil
+	}
+	return true, nil
+}
+
+// SetMountPointSourceSecret stores (bcrypt-hashed) source secret for a mountpoint.
+// Passing an empty secret clears the stored secret.
+func (s *Service) SetMountPointSourceSecret(mountpointID int64, secret string) error {
+	if secret == "" {
+		_, err := s.db.Exec("UPDATE mountpoints SET source_secret_hash = NULL WHERE id = ?", mountpointID)
+		if err != nil {
+			return fmt.Errorf("clear mountpoint source secret: %w", err)
+		}
+		return nil
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(secret), bcrypt.DefaultCost)
+	if err != nil {
+		return fmt.Errorf("hash mountpoint source secret: %w", err)
+	}
+	_, err = s.db.Exec("UPDATE mountpoints SET source_secret_hash = ? WHERE id = ?", string(hash), mountpointID)
+	if err != nil {
+		return fmt.Errorf("update mountpoint source secret: %w", err)
+	}
+	return nil
+}
+
 // GetMountPointRow retrieves a mountpoint by name.
 func (s *Service) GetMountPointRow(name string) (*MountPointRow, error) {
 	row := s.db.QueryRow(

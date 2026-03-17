@@ -63,16 +63,20 @@ export default function MountpointsPage() {
   const [newName, setNewName] = useState("")
   const [newDesc, setNewDesc] = useState("")
   const [newFormat, setNewFormat] = useState("RTCM3")
+  const [newSourceSecret, setNewSourceSecret] = useState("")
 
   // Edit form
   const [editDesc, setEditDesc] = useState("")
   const [editFormat, setEditFormat] = useState("")
   const [editEnabled, setEditEnabled] = useState(true)
+  const [editSourceSecret, setEditSourceSecret] = useState("")
+  const [editSourceSecretDirty, setEditSourceSecretDirty] = useState(false)
 
   function openCreate() {
     setNewName("")
     setNewDesc("")
     setNewFormat("RTCM3")
+    setNewSourceSecret("")
     setCreateOpen(true)
   }
 
@@ -81,6 +85,8 @@ export default function MountpointsPage() {
     setEditDesc(mp.description)
     setEditFormat(mp.format)
     setEditEnabled(mp.enabled)
+    setEditSourceSecret("")
+    setEditSourceSecretDirty(false)
   }
 
   async function handleCreate() {
@@ -89,6 +95,7 @@ export default function MountpointsPage() {
         name: newName,
         description: newDesc,
         format: newFormat || undefined,
+        ...(newSourceSecret ? { source_secret: newSourceSecret } : {}),
       })
       toast.success("挂载点创建成功")
       setCreateOpen(false)
@@ -106,6 +113,7 @@ export default function MountpointsPage() {
           description: editDesc,
           format: editFormat,
           enabled: editEnabled,
+          ...(editSourceSecretDirty ? { source_secret: editSourceSecret } : {}),
         },
       })
       toast.success("挂载点更新成功")
@@ -242,6 +250,18 @@ export default function MountpointsPage() {
                 </SelectContent>
               </Select>
             </div>
+            <div className="space-y-2">
+              <Label>基站密码（可选）</Label>
+              <Input
+                type="password"
+                value={newSourceSecret}
+                onChange={(e) => setNewSourceSecret(e.target.value)}
+                placeholder="用于 SOURCE <password> 认证"
+              />
+              <p className="text-xs text-muted-foreground">
+                兼容只发送 SOURCE password、不发送 Authorization 的旧基站设备
+              </p>
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setCreateOpen(false)}>取消</Button>
@@ -281,6 +301,33 @@ export default function MountpointsPage() {
             <div className="flex items-center justify-between">
               <Label>启用</Label>
               <Switch checked={editEnabled} onCheckedChange={setEditEnabled} />
+            </div>
+            <div className="space-y-2">
+              <Label>修改基站密码（留空则不修改）</Label>
+              <div className="flex gap-2">
+                <Input
+                  type="password"
+                  value={editSourceSecret}
+                  onChange={(e) => {
+                    setEditSourceSecret(e.target.value)
+                    setEditSourceSecretDirty(true)
+                  }}
+                  placeholder="输入新密码"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setEditSourceSecret("")
+                    setEditSourceSecretDirty(true)
+                  }}
+                >
+                  清空
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                清空后，仅支持带 Authorization 的基站（或关闭认证）
+              </p>
             </div>
           </div>
           <DialogFooter>

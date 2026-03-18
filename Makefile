@@ -1,10 +1,11 @@
 .PHONY: dev-frontend dev-backend build build-frontend build-backend clean \
+       build-linux build-linux-amd64 \
        simbase simrover test-env test-env-auth test-caster test-bench-1b test-bench-mb
 
 # ─── Development ───────────────────────────────────────────────
 
 dev-frontend:
-	cd web && pnpm dev
+	cd web && bun run dev
 
 dev-backend:
 	go run ./cmd/caster
@@ -14,13 +15,23 @@ dev-backend:
 build: build-frontend build-backend
 
 build-frontend:
-	cd web && pnpm build
+	cd web && bun run build
 
 build-backend:
 	go build -o bin/caster ./cmd/caster
 	go build -o bin/simbase ./cmd/simbase
 	go build -o bin/simrover ./cmd/simrover
 	go build -o bin/testenv ./cmd/testenv
+
+# 交叉编译：Linux amd64（用于部署到服务器）
+build-linux-amd64: build-frontend
+	GOOS=linux GOARCH=amd64 go build -o bin/caster-linux-amd64 ./cmd/caster
+	GOOS=linux GOARCH=amd64 go build -o bin/simbase-linux-amd64 ./cmd/simbase
+	GOOS=linux GOARCH=amd64 go build -o bin/simrover-linux-amd64 ./cmd/simrover
+	GOOS=linux GOARCH=amd64 go build -o bin/testenv-linux-amd64 ./cmd/testenv
+
+# 同上，简短别名
+build-linux: build-linux-amd64
 
 # ─── Simulator ─────────────────────────────────────────────────
 
@@ -64,7 +75,7 @@ test-bench-mb:
 
 clean:
 	rm -rf bin/ internal/web/dist/
-	cd web && rm -rf node_modules/
+	cd web && rm -rf node_modules/ .bun
 
 # 清理测试环境
 test-clean:

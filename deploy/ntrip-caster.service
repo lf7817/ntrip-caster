@@ -1,0 +1,31 @@
+[Unit]
+Description=NTRIP Caster - RTCM differential data server
+Documentation=https://github.com/lf7817/ntrip-caster
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ntrip-caster
+Group=ntrip-caster
+
+# 安装路径：二进制与 config 所在目录
+WorkingDirectory=/opt/ntrip-caster
+ExecStart=/opt/ntrip-caster/caster -config /opt/ntrip-caster/config.yaml
+
+# 重启策略
+Restart=on-failure
+RestartSec=5s
+
+# 资源与安全
+LimitNOFILE=65536
+NoNewPrivileges=true
+PrivateTmp=true
+
+# 日志
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ntrip-caster
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,28 @@
+# NTRIP Caster - Docker Compose 示例
+# 使用方式: docker compose up -d
+# 持久化数据库：请使用 deploy/config-docker.yaml 作为 config.yaml（其中 database.path 为 /app/data/caster.db）
+
+services:
+  ntrip-caster:
+    build: .
+    image: ntrip-caster:latest
+    container_name: ntrip-caster
+    restart: unless-stopped
+    ports:
+      - "2101:2101"   # NTRIP
+      - "8080:8080"   # Admin API
+    volumes:
+      # 挂载自定义配置（持久化请用 deploy/config-docker.yaml，内含 database.path: /app/data/caster.db）
+      - ./config.yaml:/app/config.yaml:ro
+      # 持久化 SQLite 数据库
+      - ./:/app/data
+    environment:
+      - TZ=UTC
+    # 高并发时建议提高文件描述符限制
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+
+volumes:
+  ntrip-caster-data:

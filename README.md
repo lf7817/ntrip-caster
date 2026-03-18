@@ -71,6 +71,118 @@ go build -o bin/caster ./cmd/caster
 
 > **生产环境请务必立即修改默认密码。**
 
+## 部署到 Linux amd64
+
+在本地（如 macOS/Windows）交叉编译出 Linux 可执行文件，再上传到服务器运行。
+
+### 1. 编译 Linux amd64 二进制
+
+需先安装 [Bun](https://bun.sh) 以构建前端（前端会嵌入到 caster 二进制中）：
+
+```bash
+# 一键：先构建前端，再交叉编译所有 Linux amd64 二进制
+make build-linux-amd64
+```
+
+产物在 `bin/` 下：
+
+- `bin/caster-linux-amd64` — 主服务（NTRIP + Admin API）
+- `bin/simbase-linux-amd64`、`bin/simrover-linux-amd64`、`bin/testenv-linux-amd64` — 测试/压测工具
+
+若只想要 caster，可手动执行：
+
+```bash
+make build-frontend
+GOOS=linux GOARCH=amd64 go build -o bin/caster-linux-amd64 ./cmd/caster
+```
+
+### 2. 上传与运行
+
+将 `caster-linux-amd64` 和 `config.yaml` 拷到 Linux 服务器，例如：
+
+```bash
+scp bin/caster-linux-amd64 user@your-server:/opt/ntrip-caster/caster
+scp config.yaml user@your-server:/opt/ntrip-caster/
+```
+
+在服务器上可直接运行：
+
+```bash
+chmod +x /opt/ntrip-caster/caster
+cd /opt/ntrip-caster
+./caster -config config.yaml
+```
+
+### 3. 使用 systemd 管理（推荐）
+
+使用仓库内提供的 unit 文件，可开机自启、自动重启与日志统一到 journald。
+
+**安装步骤：**
+
+```bash
+# 1. 创建专用用户（可选，提高安全性）
+sudo useradd -r -s /usr/sbin/nologin ntrip-caster
+
+# 2. 确保目录与权限
+sudo mkdir -p /opt/ntrip-caster
+sudo cp /path/to/caster-linux-amd64 /opt/ntrip-caster/caster
+sudo cp /path/to/config.yaml /opt/ntrip-caster/
+sudo chmod +x /opt/ntrip-caster/caster
+sudo chown -R ntrip-caster:ntrip-caster /opt/ntrip-caster
+
+# 3. 安装并启用 systemd 服务
+sudo cp deploy/ntrip-caster.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable ntrip-caster
+sudo systemctl start ntrip-caster
+sudo systemctl status ntrip-caster
+```
+
+**常用命令：**
+
+| 命令 | 说明 |
+|------|------|
+| `sudo systemctl start ntrip-caster` | 启动 |
+| `sudo systemctl stop ntrip-caster` | 停止 |
+| `sudo systemctl restart ntrip-caster` | 重启 |
+| `sudo systemctl status ntrip-caster` | 状态 |
+| `journalctl -u ntrip-caster -f` | 实时查看日志 |
+
+若使用 root 运行，将 unit 中的 `User=` 与 `Group=` 改为 `root`，或删除这两行即可。
+
+### 4. 使用 Docker 部署（Ubuntu 24.04 镜像）
+
+镜像为多阶段构建：在容器内编译前端与 Go 二进制，最终运行镜像是 **Ubuntu 24.04**，仅包含单个可执行文件与 CA 证书。
+
+**仅用 Docker 运行：**
+
+```bash
+# 构建镜像
+docker build -t ntrip-caster:latest .
+
+# 运行（使用镜像内默认 config.yaml，数据不持久化）
+docker run -d --name ntrip-caster -p 2101:2101 -p 8080:8080 ntrip-caster:latest
+```
+
+**使用 Docker Compose（推荐，便于挂载配置与持久化数据库）：**
+
+```bash
+# 使用 Docker 专用配置（database.path 指向 /app/data/caster.db）
+cp deploy/config-docker.yaml config.yaml
+# 按需编辑 config.yaml
+
+docker compose up -d
+```
+
+| 说明       | 做法 |
+|------------|------|
+| 自定义配置 | 将 `config.yaml` 放在项目根目录，compose 会挂载为 `/app/config.yaml` |
+| 持久化数据库 | 使用 `deploy/config-docker.yaml` 作为 `config.yaml`（内含 `path: /app/data/caster.db`），compose 已挂载命名卷 `ntrip-caster-data` 到 `/app/data` |
+| 查看日志   | `docker compose logs -f ntrip-caster` |
+| 重启       | `docker compose restart ntrip-caster` |
+
+部署时请放行 NTRIP 端口（默认 2101）和 Admin 端口（默认 8080）。
+
 ## 配置说明
 
 创建或编辑 `config.yaml`：

@@ -1,0 +1,39 @@
+# Git
+.git
+.gitignore
+
+# Build artifacts
+bin/
+internal/web/dist/
+
+# Dependencies（在镜像内重新安装）
+web/node_modules/
+web/.bun
+web/dist
+
+# 测试与开发
+*.test
+*_test.go
+config_test.yaml
+caster_test.db*
+*.db-wal
+*.db-shm
+
+# 文档与部署材料（不参与构建）
+docs/
+deploy/
+*.md
+!README.md
+
+# IDE / 本地
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Docker
+Dockerfile*
+.dockerignore
+docker-compose*.yml
+.docker/

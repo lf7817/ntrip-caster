@@ -13,11 +13,7 @@
 *.out
 
 # Go binary（项目产物）
-/bin/caster
-caster
-/simbase
-/simrover
-/testenv
+
 
 # =========================
 

@@ -71,18 +71,29 @@ func (m *MountPoint) SetSource(info *SourceInfo) bool {
 	return true
 }
 
-// ClearSource removes the current source. It is a no-op if src does not
-// match the current source ID (prevents a stale goroutine from clearing a
-// new source).
+// ClearSource removes the current source and disconnects all rover clients.
+// It is a no-op if src does not match the current source ID (prevents a stale
+// goroutine from clearing a new source).
 func (m *MountPoint) ClearSource(srcID string) {
 	m.mu.Lock()
-	defer m.mu.Unlock()
 	if m.source == nil || m.source.ID != srcID {
+		m.mu.Unlock()
 		return
 	}
 	m.source = nil
 	m.Stats.SourceOnline.Store(0)
 	slog.Info("source disconnected", "mount", m.Name, "source", srcID)
+
+	// Disconnect all rover clients since they can no longer receive data
+	clients := make([]*client.Client, 0, len(m.clientsByID))
+	for _, c := range m.clientsByID {
+		clients = append(clients, c)
+	}
+	m.mu.Unlock()
+
+	for _, c := range clients {
+		c.KickSlowConsumer()
+	}
 }
 
 // HasSource reports whether a source is currently connected.

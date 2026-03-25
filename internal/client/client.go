@@ -66,11 +66,38 @@ func (c *Client) MarkSlowAndKick() {
 // WriteLoop drains WriteChan and writes RTCM packets to the TCP connection.
 // It must be run as a goroutine; on exit it removes the client from its
 // mountpoint. The caller should use a WaitGroup to track this goroutine.
+//
+// It also monitors the read side of the connection to detect client disconnect.
+// When the client closes the connection, Read returns EOF and the loop exits.
 func (c *Client) WriteLoop() {
 	defer c.removeFromMount()
+
+	// Start a goroutine to detect client disconnect via read.
+	// When client closes, Read returns EOF (or error) and we signal Done.
+	readDone := make(chan struct{})
+	go func() {
+		defer close(readDone)
+		// Read one byte at a time; we don't care about the data,
+		// we just want to know when the connection closes.
+		// NTRIP rovers should not send data, but if they do, we ignore it.
+		buf := make([]byte, 64)
+		for {
+			_, err := c.Conn.Read(buf)
+			if err != nil {
+				// Connection closed or error - signal WriteLoop to exit
+				c.KickSlowConsumer()
+				return
+			}
+			// Client sent unexpected data - ignore and continue monitoring.
+			// This handles cases where clients send occasional keepalive bytes.
+		}
+	}()
+
 	for {
 		select {
 		case <-c.Done:
+			return
+		case <-readDone:
 			return
 		case pkt := <-c.WriteChan:
 			if pkt == nil {

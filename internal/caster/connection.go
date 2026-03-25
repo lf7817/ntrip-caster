@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net"
 	"sync"
+	"time"
 
 	"ntrip-caster/internal/account"
 	"ntrip-caster/internal/auth"
@@ -31,6 +32,8 @@ type connHandler struct {
 func (h *connHandler) handle(conn net.Conn) {
 	if tc, ok := conn.(*net.TCPConn); ok {
 		_ = tc.SetNoDelay(true)
+		_ = tc.SetKeepAlive(true)
+		_ = tc.SetKeepAlivePeriod(30 * time.Second)
 	}
 
 	reader := bufio.NewReaderSize(conn, 4096)
@@ -90,6 +93,13 @@ func (h *connHandler) handleRover(conn net.Conn, req *NTRIPRequest) {
 	mp := h.mgr.Get(req.MountPoint)
 	if mp == nil || !mp.Enabled {
 		writeResponse(conn, "HTTP/1.1 404 Not Found\r\n\r\n")
+		conn.Close()
+		return
+	}
+
+	// Reject if no source is online
+	if !mp.HasSource() {
+		writeResponse(conn, "HTTP/1.1 503 Service Unavailable\r\n\r\n")
 		conn.Close()
 		return
 	}

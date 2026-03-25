@@ -91,7 +91,7 @@ func (h *connHandler) handleRover(conn net.Conn, req *NTRIPRequest) {
 
 	// Lookup mountpoint
 	mp := h.mgr.Get(req.MountPoint)
-	if mp == nil || !mp.Enabled {
+	if mp == nil || !mp.IsEnabled() {
 		writeResponse(conn, "HTTP/1.1 404 Not Found\r\n\r\n")
 		conn.Close()
 		return
@@ -126,6 +126,8 @@ func (h *connHandler) handleRover(conn net.Conn, req *NTRIPRequest) {
 // --- Source Rev1 ---
 
 func (h *connHandler) handleSourceRev1(conn net.Conn, req *NTRIPRequest) {
+	slog.Debug("handleSourceRev1", "mountpoint", req.MountPoint)
+
 	if h.cfg.Auth.Enabled {
 		ok, err := h.authenticateSource(req)
 		if err != nil || !ok {
@@ -136,7 +138,7 @@ func (h *connHandler) handleSourceRev1(conn net.Conn, req *NTRIPRequest) {
 	}
 
 	mp := h.mgr.Get(req.MountPoint)
-	if mp == nil || !mp.Enabled {
+	if mp == nil || !mp.IsEnabled() {
 		writeResponse(conn, "HTTP/1.1 404 Not Found\r\n\r\n")
 		conn.Close()
 		return
@@ -150,6 +152,7 @@ func (h *connHandler) handleSourceRev1(conn net.Conn, req *NTRIPRequest) {
 		return
 	}
 
+	slog.Info("source Rev1 connected", "mount", req.MountPoint, "source", id)
 	writeResponse(conn, "ICY 200 OK\r\n\r\n")
 
 	h.wg.Add(1)
@@ -181,7 +184,7 @@ func (h *connHandler) handleSourceRev2(conn net.Conn, req *NTRIPRequest) {
 	}
 
 	mp := h.mgr.Get(req.MountPoint)
-	if mp == nil || !mp.Enabled {
+	if mp == nil || !mp.IsEnabled() {
 		writeResponse(conn, "HTTP/1.1 404 Not Found\r\n\r\n")
 		conn.Close()
 		return
@@ -195,6 +198,7 @@ func (h *connHandler) handleSourceRev2(conn net.Conn, req *NTRIPRequest) {
 		return
 	}
 
+	slog.Info("source Rev2 connected", "mount", req.MountPoint, "source", id)
 	writeResponse(conn, "HTTP/1.1 200 OK\r\n\r\n")
 
 	h.wg.Add(1)

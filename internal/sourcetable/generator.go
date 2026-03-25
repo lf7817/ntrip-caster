@@ -19,7 +19,7 @@ func Generate(mgr *mountpoint.Manager) string {
 	sb.WriteString("SOURCETABLE 200 OK\r\n")
 
 	for _, mp := range mgr.List() {
-		if !mp.Enabled {
+		if !mp.IsEnabled() {
 			continue
 		}
 		// STR record: STR;mountpoint;identifier;format;format-details;carrier;

@@ -83,6 +83,7 @@ func (mgr *Manager) DisconnectAll() {
 }
 
 // UpdateMountPoint updates metadata fields of an existing mountpoint.
+// When a mountpoint is disabled, it disconnects all active connections.
 func (mgr *Manager) UpdateMountPoint(name string, description string, format string, enabled bool, writeQueue int, writeTimeout time.Duration) error {
 	mgr.mu.RLock()
 	mp, exists := mgr.mounts[name]
@@ -91,12 +92,19 @@ func (mgr *Manager) UpdateMountPoint(name string, description string, format str
 		return fmt.Errorf("mountpoint %q not found", name)
 	}
 
+	wasEnabled := mp.IsEnabled()
 	mp.mu.Lock()
-	defer mp.mu.Unlock()
 	mp.Description = description
 	mp.Format = format
-	mp.Enabled = enabled
+	mp.enabled.Store(enabled)
 	mp.WriteQueue = writeQueue
 	mp.WriteTimeout = writeTimeout
+	mp.mu.Unlock()
+
+	// Disconnect all connections when disabling
+	if wasEnabled && !enabled {
+		mp.DisconnectAll()
+	}
+
 	return nil
 }

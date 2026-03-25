@@ -22,7 +22,7 @@ type MountPoint struct {
 	Name         string
 	Description  string
 	Format       string
-	Enabled      bool
+	enabled      atomic.Bool // thread-safe enabled state
 	WriteQueue   int
 	WriteTimeout time.Duration
 
@@ -48,13 +48,23 @@ func NewMountPoint(name, description, format string, writeQueue int, writeTimeou
 		Name:         name,
 		Description:  description,
 		Format:       format,
-		Enabled:      true,
 		WriteQueue:   writeQueue,
 		WriteTimeout: writeTimeout,
 		clientsByID:  make(map[string]*client.Client),
 	}
+	mp.enabled.Store(true)
 	mp.snapshot.Store(([]*client.Client)(nil))
 	return mp
+}
+
+// IsEnabled returns the enabled state. Thread-safe.
+func (m *MountPoint) IsEnabled() bool {
+	return m.enabled.Load()
+}
+
+// SetEnabled sets the enabled state. Thread-safe.
+func (m *MountPoint) SetEnabled(enabled bool) {
+	m.enabled.Store(enabled)
 }
 
 // SetSource registers a source on this mountpoint. Returns false if a source

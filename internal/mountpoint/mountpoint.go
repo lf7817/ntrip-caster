@@ -71,15 +71,16 @@ func (m *MountPoint) SetSource(info *SourceInfo) bool {
 	return true
 }
 
-// ClearSource removes the current source and disconnects all rover clients.
-// It is a no-op if src does not match the current source ID (prevents a stale
-// goroutine from clearing a new source).
+// ClearSource removes the current source, closes its connection, and disconnects
+// all rover clients. It is a no-op if src does not match the current source ID
+// (prevents a stale goroutine from clearing a new source).
 func (m *MountPoint) ClearSource(srcID string) {
 	m.mu.Lock()
 	if m.source == nil || m.source.ID != srcID {
 		m.mu.Unlock()
 		return
 	}
+	src := m.source
 	m.source = nil
 	m.Stats.SourceOnline.Store(0)
 	slog.Info("source disconnected", "mount", m.Name, "source", srcID)
@@ -90,6 +91,11 @@ func (m *MountPoint) ClearSource(srcID string) {
 		clients = append(clients, c)
 	}
 	m.mu.Unlock()
+
+	// Close the source TCP connection
+	if src.Stop != nil {
+		src.Stop()
+	}
 
 	for _, c := range clients {
 		c.KickSlowConsumer()
@@ -125,6 +131,7 @@ func (m *MountPoint) AddClient(c *client.Client) {
 }
 
 // RemoveClient removes a client by ID. Called from Client.writeLoop via defer.
+// This only removes the client from the registry; use KickClient to close the connection.
 func (m *MountPoint) RemoveClient(id string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -136,6 +143,23 @@ func (m *MountPoint) RemoveClient(id string) {
 	m.rebuildSnapshotLocked()
 	m.Stats.ClientCount.Store(int64(len(m.clientsByID)))
 	slog.Info("client removed", "mount", m.Name, "client", id)
+}
+
+// KickClient removes a client and closes its TCP connection.
+func (m *MountPoint) KickClient(id string) {
+	m.mu.Lock()
+	c, ok := m.clientsByID[id]
+	if !ok {
+		m.mu.Unlock()
+		return
+	}
+	delete(m.clientsByID, id)
+	m.rebuildSnapshotLocked()
+	m.Stats.ClientCount.Store(int64(len(m.clientsByID)))
+	m.mu.Unlock()
+
+	slog.Info("client kicked", "mount", m.Name, "client", id)
+	c.KickSlowConsumer()
 }
 
 // Broadcast sends pkt to all connected clients using the atomic snapshot.

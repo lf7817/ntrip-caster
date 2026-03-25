@@ -369,7 +369,7 @@ func (h *Handlers) KickClient(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	for _, mp := range h.mgr.List() {
-		mp.RemoveClient(clientID)
+		mp.KickClient(clientID)
 	}
 	jsonOK(w, map[string]string{"status": "ok"})
 }

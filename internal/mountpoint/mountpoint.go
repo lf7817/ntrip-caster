@@ -168,15 +168,15 @@ func (m *MountPoint) AddClient(c *client.Client) error {
 // This only removes the client from the registry; use KickClient to close the connection.
 func (m *MountPoint) RemoveClient(id string) {
 	m.mu.Lock()
-	defer m.mu.Unlock()
-
 	if _, ok := m.clientsByID[id]; !ok {
+		m.mu.Unlock()
 		return
 	}
 	delete(m.clientsByID, id)
 	m.rebuildSnapshotLocked()
 	m.Stats.ClientCount.Store(int64(len(m.clientsByID)))
-	slog.Info("client removed", "mount", m.Name, "client", id)
+	m.mu.Unlock()
+	slog.Debug("client removed", "mount", m.Name, "client", id)
 }
 
 // KickClient removes a client and closes its TCP connection.
@@ -259,13 +259,25 @@ func (m *MountPoint) KickSourceByUser(userID int64) bool {
 
 // Broadcast sends pkt to all connected clients using the atomic snapshot.
 // Slow clients that cannot keep up are kicked via MarkSlowAndKick.
+// This function never takes locks to ensure maximum performance.
 func (m *MountPoint) Broadcast(pkt *rtcm.RTCMPacket) {
 	clients, _ := m.snapshot.Load().([]*client.Client)
+
 	for _, c := range clients {
+		// Check if the client is already done - skip immediately
+		select {
+		case <-c.Done:
+			continue
+		default:
+		}
+
 		select {
 		case c.WriteChan <- pkt:
+			// Successfully sent packet
 		case <-c.Done:
+			// Client disconnected during send attempt
 		default:
+			// Channel full, mark as slow and kick
 			m.Stats.SlowClients.Add(1)
 			m.Stats.KickCount.Add(1)
 			c.MarkSlowAndKick()

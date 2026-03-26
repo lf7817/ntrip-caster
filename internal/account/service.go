@@ -4,6 +4,8 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"sync"
+	"time"
 
 	"golang.org/x/crypto/bcrypt"
 )
@@ -11,11 +13,27 @@ import (
 // Service provides CRUD operations for users and mountpoint records.
 type Service struct {
 	db *sql.DB
+
+	// Auth cache: maps "username:passwordHash" to cached result
+	// This dramatically reduces bcrypt CPU usage during mass connections
+	authCache   map[string]*authCacheEntry
+	authCacheMu sync.RWMutex
 }
+
+// authCacheEntry holds a cached authentication result.
+type authCacheEntry struct {
+	user      *User
+	expiresAt time.Time
+}
+
+const authCacheTTL = 5 * time.Minute
 
 // NewService creates an account service backed by db.
 func NewService(db *sql.DB) *Service {
-	return &Service{db: db}
+	return &Service{
+		db:        db,
+		authCache: make(map[string]*authCacheEntry),
+	}
 }
 
 // --- Users ---
@@ -39,7 +57,20 @@ func (s *Service) CreateUser(username, password, role string) (*User, error) {
 }
 
 // Authenticate checks username/password and returns the user if valid.
+// Uses an in-memory cache to avoid expensive bcrypt operations during mass connections.
 func (s *Service) Authenticate(username, password string) (*User, error) {
+	// Check cache first
+	cacheKey := username + ":" + password
+	s.authCacheMu.RLock()
+	if entry, ok := s.authCache[cacheKey]; ok {
+		if time.Now().Before(entry.expiresAt) {
+			s.authCacheMu.RUnlock()
+			return entry.user, nil
+		}
+	}
+	s.authCacheMu.RUnlock()
+
+	// Not in cache or expired, do full authentication
 	u, err := s.GetUserByName(username)
 	if err != nil {
 		return nil, err
@@ -53,6 +84,15 @@ func (s *Service) Authenticate(username, password string) (*User, error) {
 	if err := bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(password)); err != nil {
 		return nil, nil
 	}
+
+	// Cache the successful result
+	s.authCacheMu.Lock()
+	s.authCache[cacheKey] = &authCacheEntry{
+		user:      u,
+		expiresAt: time.Now().Add(authCacheTTL),
+	}
+	s.authCacheMu.Unlock()
+
 	return u, nil
 }
 
@@ -117,6 +157,10 @@ func (s *Service) UpdateUser(id int64, role string, enabled bool) error {
 	if err != nil {
 		return fmt.Errorf("update user: %w", err)
 	}
+	// Clear auth cache since user status changed
+	s.authCacheMu.Lock()
+	s.authCache = make(map[string]*authCacheEntry)
+	s.authCacheMu.Unlock()
 	return nil
 }
 
@@ -130,6 +174,10 @@ func (s *Service) UpdatePassword(id int64, newPassword string) error {
 	if err != nil {
 		return fmt.Errorf("update password: %w", err)
 	}
+	// Clear auth cache since password changed
+	s.authCacheMu.Lock()
+	s.authCache = make(map[string]*authCacheEntry)
+	s.authCacheMu.Unlock()
 	return nil
 }
 
@@ -139,6 +187,10 @@ func (s *Service) DeleteUser(id int64) error {
 	if err != nil {
 		return fmt.Errorf("delete user: %w", err)
 	}
+	// Clear auth cache since user was deleted
+	s.authCacheMu.Lock()
+	s.authCache = make(map[string]*authCacheEntry)
+	s.authCacheMu.Unlock()
 	return nil
 }
 

@@ -58,10 +58,11 @@ func (c *Client) KickSlowConsumer() {
 }
 
 // MarkSlowAndKick atomically marks the client as slow and kicks it.
-// The CAS prevents spawning duplicate kick goroutines during broadcast storms.
+// The CAS prevents duplicate cleanup attempts during broadcast storms.
+// This method calls KickSlowConsumer synchronously to ensure immediate cleanup.
 func (c *Client) MarkSlowAndKick() {
 	if atomic.CompareAndSwapInt32(&c.slow, 0, 1) {
-		go c.KickSlowConsumer()
+		c.KickSlowConsumer()
 	}
 }
 

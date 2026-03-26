@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
+	"net/http/pprof"
 
 	"ntrip-caster/internal/account"
 	"ntrip-caster/internal/config"
@@ -54,6 +55,15 @@ func NewHTTPServer(cfg *config.Config, acctSvc *account.Service, mgr *mountpoint
 	protected.HandleFunc("DELETE /api/bindings/{id}", h.DeleteBinding)
 
 	mux.Handle("/api/", sess.AuthMiddleware(protected))
+
+	// pprof endpoints for profiling.
+	// WARNING: In production, consider removing these endpoints or adding IP-based access control.
+	// For internal networks, leaving them accessible is usually fine for debugging.
+	mux.HandleFunc("GET /debug/pprof/", pprof.Index)
+	mux.HandleFunc("GET /debug/pprof/cmdline", pprof.Cmdline)
+	mux.HandleFunc("GET /debug/pprof/profile", pprof.Profile)
+	mux.HandleFunc("GET /debug/pprof/symbol", pprof.Symbol)
+	mux.HandleFunc("GET /debug/pprof/trace", pprof.Trace)
 
 	// Serve embedded frontend (SPA with fallback to index.html)
 	distFS, _ := fs.Sub(web.Assets, "dist")

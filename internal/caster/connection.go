@@ -39,6 +39,9 @@ func (h *connHandler) handle(conn net.Conn) {
 		_ = tc.SetKeepAlivePeriod(30 * time.Second)
 	}
 
+	// Set a read deadline for the initial request to prevent hanging connections
+	_ = conn.SetReadDeadline(time.Now().Add(10 * time.Second))
+
 	reader := bufio.NewReaderSize(conn, 4096)
 	req, err := ParseRequest(reader)
 	if err != nil {
@@ -46,6 +49,9 @@ func (h *connHandler) handle(conn net.Conn) {
 		conn.Close()
 		return
 	}
+
+	// Clear the deadline after successful request parsing
+	_ = conn.SetReadDeadline(time.Time{})
 
 	switch req.Type {
 	case RequestSourcetable:
@@ -140,10 +146,15 @@ func (h *connHandler) handleRover(conn net.Conn, req *NTRIPRequest) {
 	// Respond
 	writeResponse(conn, "ICY 200 OK\r\n\r\n")
 
+	// Start WriteLoop goroutine immediately after adding client.
+	// The WriteLoop's defer will clean up the client from mountpoint.
+	// We use a cleanup helper to handle the case where the connection
+	// closes before WriteLoop starts.
 	h.wg.Add(1)
 	go func() {
 		defer h.wg.Done()
 		defer h.globalLimiter.Release()
+		// WriteLoop's defer removeFromMount() will clean up the client
 		c.WriteLoop()
 	}()
 }

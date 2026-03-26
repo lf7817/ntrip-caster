@@ -20,6 +20,7 @@ type MountRef interface {
 // Client represents a connected Rover that receives RTCM broadcast data.
 type Client struct {
 	ID          string
+	UserID      int64 // user who established this connection (0 if no auth)
 	Conn        net.Conn
 	Mount       MountRef
 	MountName   string
@@ -33,9 +34,10 @@ type Client struct {
 }
 
 // New creates a Client with the given channel buffer size and write timeout.
-func New(id string, conn net.Conn, mount MountRef, mountName string, queueSize int, writeTimeout time.Duration) *Client {
+func New(id string, userID int64, conn net.Conn, mount MountRef, mountName string, queueSize int, writeTimeout time.Duration) *Client {
 	return &Client{
 		ID:           id,
+		UserID:       userID,
 		Conn:         conn,
 		Mount:        mount,
 		MountName:    mountName,

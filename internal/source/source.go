@@ -15,6 +15,7 @@ import (
 // Source represents a connected NTRIP Base Station that pushes RTCM data.
 type Source struct {
 	ID        string
+	UserID    int64 // user who established this connection (0 if no auth)
 	Conn      net.Conn
 	Mount     *mountpoint.MountPoint
 	Done      chan struct{}
@@ -24,9 +25,10 @@ type Source struct {
 
 // New creates a new Source and registers it on the given mountpoint.
 // Returns nil if the mountpoint already has a source.
-func New(id string, conn net.Conn, mp *mountpoint.MountPoint) *Source {
+func New(id string, userID int64, conn net.Conn, mp *mountpoint.MountPoint) *Source {
 	s := &Source{
 		ID:        id,
+		UserID:    userID,
 		Conn:      conn,
 		Mount:     mp,
 		Done:      make(chan struct{}),
@@ -34,9 +36,10 @@ func New(id string, conn net.Conn, mp *mountpoint.MountPoint) *Source {
 	}
 
 	info := &mountpoint.SourceInfo{
-		ID:   id,
-		Done: s.Done,
-		Stop: func() { s.Close() },
+		ID:     id,
+		UserID: userID,
+		Done:   s.Done,
+		Stop:   func() { s.Close() },
 	}
 	if !mp.SetSource(info) {
 		return nil

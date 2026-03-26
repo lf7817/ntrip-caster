@@ -85,6 +85,7 @@ export default function ConnectionsPage() {
                   <TableRow>
                     <TableHead>挂载点</TableHead>
                     <TableHead>Source ID</TableHead>
+                    <TableHead>用户</TableHead>
                     <TableHead className="text-right">操作</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -92,7 +93,7 @@ export default function ConnectionsPage() {
                   {!sources?.length ? (
                     <TableRow>
                       <TableCell
-                        colSpan={3}
+                        colSpan={4}
                         className="text-center text-muted-foreground py-8"
                       >
                         无在线 Source
@@ -106,6 +107,9 @@ export default function ConnectionsPage() {
                         </TableCell>
                         <TableCell className="font-mono text-sm text-muted-foreground">
                           {s.source_id}
+                        </TableCell>
+                        <TableCell>
+                          {s.username || <span className="text-muted-foreground">—</span>}
                         </TableCell>
                         <TableCell className="text-right">
                           <Button
@@ -139,6 +143,7 @@ export default function ConnectionsPage() {
                   <TableRow>
                     <TableHead>挂载点</TableHead>
                     <TableHead>Client ID</TableHead>
+                    <TableHead>用户</TableHead>
                     <TableHead className="text-right">操作</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -146,7 +151,7 @@ export default function ConnectionsPage() {
                   {!clients?.length ? (
                     <TableRow>
                       <TableCell
-                        colSpan={3}
+                        colSpan={4}
                         className="text-center text-muted-foreground py-8"
                       >
                         无在线 Client
@@ -160,6 +165,9 @@ export default function ConnectionsPage() {
                         </TableCell>
                         <TableCell className="font-mono text-sm text-muted-foreground">
                           {c.client_id}
+                        </TableCell>
+                        <TableCell>
+                          {c.username || <span className="text-muted-foreground">—</span>}
                         </TableCell>
                         <TableCell className="text-right">
                           <Button

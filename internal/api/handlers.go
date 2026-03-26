@@ -155,6 +155,12 @@ func (h *Handlers) UpdateUser(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+
+	// Disconnect all connections when user is disabled
+	if user.Enabled && !enabled {
+		h.mgr.DisconnectUser(id)
+	}
+
 	jsonOK(w, map[string]string{"status": "ok"})
 }
 
@@ -164,6 +170,10 @@ func (h *Handlers) DeleteUser(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, "invalid user id", http.StatusBadRequest)
 		return
 	}
+
+	// Disconnect all connections before deleting
+	h.mgr.DisconnectUser(id)
+
 	if err := h.acctSvc.DeleteUser(id); err != nil {
 		jsonError(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -322,12 +332,27 @@ func (h *Handlers) ListSources(w http.ResponseWriter, r *http.Request) {
 	type srcInfo struct {
 		MountPoint string `json:"mountpoint"`
 		SourceID   string `json:"source_id"`
+		UserID     int64  `json:"user_id"`
+		Username   string `json:"username"`
 	}
 	var result []srcInfo
 	for _, mp := range h.mgr.List() {
 		sid := mp.SourceID()
 		if sid != "" {
-			result = append(result, srcInfo{MountPoint: mp.Name, SourceID: sid})
+			userID := mp.SourceUserID()
+			var username string
+			if userID > 0 {
+				user, err := h.acctSvc.GetUser(userID)
+				if err == nil && user != nil {
+					username = user.Username
+				}
+			}
+			result = append(result, srcInfo{
+				MountPoint: mp.Name,
+				SourceID:   sid,
+				UserID:     userID,
+				Username:   username,
+			})
 		}
 	}
 	jsonOK(w, result)
@@ -337,11 +362,25 @@ func (h *Handlers) ListClients(w http.ResponseWriter, r *http.Request) {
 	type cliInfo struct {
 		MountPoint string `json:"mountpoint"`
 		ClientID   string `json:"client_id"`
+		UserID     int64  `json:"user_id"`
+		Username   string `json:"username"`
 	}
 	var result []cliInfo
 	for _, mp := range h.mgr.List() {
-		for _, id := range mp.ClientIDs() {
-			result = append(result, cliInfo{MountPoint: mp.Name, ClientID: id})
+		for _, c := range mp.ClientInfos() {
+			var username string
+			if c.UserID > 0 {
+				user, err := h.acctSvc.GetUser(c.UserID)
+				if err == nil && user != nil {
+					username = user.Username
+				}
+			}
+			result = append(result, cliInfo{
+				MountPoint: mp.Name,
+				ClientID:   c.ID,
+				UserID:     c.UserID,
+				Username:   username,
+			})
 		}
 	}
 	jsonOK(w, result)

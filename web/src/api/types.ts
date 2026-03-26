@@ -63,11 +63,15 @@ export interface CreateBindingReq {
 export interface SourceInfo {
   mountpoint: string
   source_id: string
+  user_id: number
+  username: string
 }
 
 export interface ClientInfo {
   mountpoint: string
   client_id: string
+  user_id: number
+  username: string
 }
 
 export interface MountpointStats {

@@ -37,9 +37,10 @@ type MountPoint struct {
 // SourceInfo is a lightweight view of the currently connected source,
 // kept inside MountPoint to avoid import cycles with the source package.
 type SourceInfo struct {
-	ID   string
-	Done chan struct{}
-	Stop func() // called to close the source connection
+	ID     string
+	UserID int64 // user who established this connection (0 if no auth)
+	Done   chan struct{}
+	Stop   func() // called to close the source connection
 }
 
 // NewMountPoint creates an enabled mountpoint with the given defaults.
@@ -129,6 +130,16 @@ func (m *MountPoint) SourceID() string {
 	return m.source.ID
 }
 
+// SourceUserID returns the user ID of the current source, or 0 if none or no user binding.
+func (m *MountPoint) SourceUserID() int64 {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.source == nil {
+		return 0
+	}
+	return m.source.UserID
+}
+
 // AddClient registers a client for broadcast. Thread-safe.
 func (m *MountPoint) AddClient(c *client.Client) {
 	m.mu.Lock()
@@ -170,6 +181,67 @@ func (m *MountPoint) KickClient(id string) {
 
 	slog.Info("client kicked", "mount", m.Name, "client", id)
 	c.KickSlowConsumer()
+}
+
+// KickClientsByUser disconnects all clients belonging to a specific user.
+// Returns true if any clients were disconnected.
+func (m *MountPoint) KickClientsByUser(userID int64) bool {
+	m.mu.Lock()
+	var toKick []*client.Client
+	for id, c := range m.clientsByID {
+		if c.UserID == userID {
+			toKick = append(toKick, c)
+			delete(m.clientsByID, id)
+		}
+	}
+	if len(toKick) > 0 {
+		m.rebuildSnapshotLocked()
+		m.Stats.ClientCount.Store(int64(len(m.clientsByID)))
+	}
+	m.mu.Unlock()
+
+	for _, c := range toKick {
+		slog.Info("client kicked (user disabled)", "mount", m.Name, "client", c.ID, "user", userID)
+		c.KickSlowConsumer()
+	}
+	return len(toKick) > 0
+}
+
+// KickSourceByUser disconnects the source and all its rover clients
+// if the source belongs to the specified user.
+// Returns true if the source was disconnected.
+func (m *MountPoint) KickSourceByUser(userID int64) bool {
+	m.mu.Lock()
+	if m.source == nil || m.source.UserID != userID {
+		m.mu.Unlock()
+		return false
+	}
+	src := m.source
+	m.source = nil
+	m.Stats.SourceOnline.Store(0)
+
+	// Also collect rover clients to disconnect
+	clients := make([]*client.Client, 0, len(m.clientsByID))
+	for _, c := range m.clientsByID {
+		clients = append(clients, c)
+	}
+	// Clear all clients since source is gone
+	for id := range m.clientsByID {
+		delete(m.clientsByID, id)
+	}
+	m.rebuildSnapshotLocked()
+	m.Stats.ClientCount.Store(0)
+	m.mu.Unlock()
+
+	slog.Info("source kicked (user disabled)", "mount", m.Name, "source", src.ID, "user", userID)
+	if src.Stop != nil {
+		src.Stop()
+	}
+
+	for _, c := range clients {
+		c.KickSlowConsumer()
+	}
+	return true
 }
 
 // Broadcast sends pkt to all connected clients using the atomic snapshot.
@@ -227,6 +299,23 @@ func (m *MountPoint) ClientIDs() []string {
 		ids = append(ids, id)
 	}
 	return ids
+}
+
+// ClientInfo contains basic information about a connected client.
+type ClientInfo struct {
+	ID     string
+	UserID int64
+}
+
+// ClientInfos returns a snapshot of currently connected clients with their user IDs.
+func (m *MountPoint) ClientInfos() []ClientInfo {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	infos := make([]ClientInfo, 0, len(m.clientsByID))
+	for _, c := range m.clientsByID {
+		infos = append(infos, ClientInfo{ID: c.ID, UserID: c.UserID})
+	}
+	return infos
 }
 
 // rebuildSnapshotLocked must be called with mu held.

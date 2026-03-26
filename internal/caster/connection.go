@@ -69,6 +69,8 @@ func (h *connHandler) handleSourcetable(conn net.Conn) {
 // --- Rover ---
 
 func (h *connHandler) handleRover(conn net.Conn, req *NTRIPRequest) {
+	var userID int64
+
 	// Authenticate
 	if h.cfg.Auth.Enabled && h.cfg.Auth.NtripRoverAuth == "basic" {
 		user, err := h.authenticateBasic(req, account.RoleRover)
@@ -77,6 +79,7 @@ func (h *connHandler) handleRover(conn net.Conn, req *NTRIPRequest) {
 			conn.Close()
 			return
 		}
+		userID = user.ID
 
 		// Check mountpoint binding (admin users skip this check)
 		if user.Role != account.RoleAdmin {
@@ -110,7 +113,7 @@ func (h *connHandler) handleRover(conn net.Conn, req *NTRIPRequest) {
 	// Register client
 	id := uuid.New().String()
 	c := client.New(
-		id, conn, mp, mp.Name,
+		id, userID, conn, mp, mp.Name,
 		mp.WriteQueue,
 		mp.WriteTimeout,
 	)
@@ -126,15 +129,16 @@ func (h *connHandler) handleRover(conn net.Conn, req *NTRIPRequest) {
 // --- Source Rev1 ---
 
 func (h *connHandler) handleSourceRev1(conn net.Conn, req *NTRIPRequest) {
-	slog.Debug("handleSourceRev1", "mountpoint", req.MountPoint)
+	var userID int64
 
 	if h.cfg.Auth.Enabled {
-		ok, err := h.authenticateSource(req)
+		uid, ok, err := h.authenticateSource(req)
 		if err != nil || !ok {
 			writeResponse(conn, "ERROR - Bad Password\r\n")
 			conn.Close()
 			return
 		}
+		userID = uid
 	}
 
 	mp := h.mgr.Get(req.MountPoint)
@@ -145,7 +149,7 @@ func (h *connHandler) handleSourceRev1(conn net.Conn, req *NTRIPRequest) {
 	}
 
 	id := uuid.New().String()
-	src := source.New(id, conn, mp)
+	src := source.New(id, userID, conn, mp)
 	if src == nil {
 		writeResponse(conn, "HTTP/1.1 409 Conflict\r\n\r\n")
 		conn.Close()
@@ -165,6 +169,8 @@ func (h *connHandler) handleSourceRev1(conn net.Conn, req *NTRIPRequest) {
 // --- Source Rev2 ---
 
 func (h *connHandler) handleSourceRev2(conn net.Conn, req *NTRIPRequest) {
+	var userID int64
+
 	if h.cfg.Auth.Enabled {
 		user, err := h.authenticateBasic(req, account.RoleBase)
 		if err != nil || user == nil {
@@ -172,6 +178,7 @@ func (h *connHandler) handleSourceRev2(conn net.Conn, req *NTRIPRequest) {
 			conn.Close()
 			return
 		}
+		userID = user.ID
 
 		if h.cfg.Auth.NtripSourceAuth == "user_binding" {
 			has, err := h.acctSvc.HasBinding(user.ID, req.MountPoint)
@@ -191,7 +198,7 @@ func (h *connHandler) handleSourceRev2(conn net.Conn, req *NTRIPRequest) {
 	}
 
 	id := uuid.New().String()
-	src := source.New(id, conn, mp)
+	src := source.New(id, userID, conn, mp)
 	if src == nil {
 		writeResponse(conn, "HTTP/1.1 409 Conflict\r\n\r\n")
 		conn.Close()
@@ -236,25 +243,28 @@ func (h *connHandler) authenticateBasic(req *NTRIPRequest, role string) (*accoun
 	return user, nil
 }
 
-func (h *connHandler) authenticateSource(req *NTRIPRequest) (bool, error) {
+// authenticateSource authenticates a source connection and returns the user ID.
+// Returns userID=0 when using mountpoint secret (no user binding).
+func (h *connHandler) authenticateSource(req *NTRIPRequest) (userID int64, ok bool, err error) {
 	if h.cfg.Auth.NtripSourceAuth == "user_binding" {
 		authHeader := req.Headers["Authorization"]
 		if authHeader != "" {
 			// If the device provided Authorization: Basic, prefer user_binding auth.
-			user, err := h.authenticateBasic(req, account.RoleBase)
-			if err != nil || user == nil {
-				return false, err
+			user, authErr := h.authenticateBasic(req, account.RoleBase)
+			if authErr != nil || user == nil {
+				return 0, false, authErr
 			}
-			has, err := h.acctSvc.HasBinding(user.ID, req.MountPoint)
-			return has, err
+			has, bindErr := h.acctSvc.HasBinding(user.ID, req.MountPoint)
+			return user.ID, has, bindErr
 		}
 
 		// Rev1 SOURCE always carries a password field. For legacy devices that do
 		// not send Authorization, fall back to per-mountpoint secret validation.
-		ok, err := h.acctSvc.VerifyMountPointSourceSecret(req.MountPoint, req.Password)
-		return ok, err
+		// No user ID in this case.
+		valid, secretErr := h.acctSvc.VerifyMountPointSourceSecret(req.MountPoint, req.Password)
+		return 0, valid, secretErr
 	}
-	return true, nil
+	return 0, true, nil
 }
 
 func writeResponse(conn net.Conn, resp string) {

@@ -108,3 +108,19 @@ func (mgr *Manager) UpdateMountPoint(name string, description string, format str
 
 	return nil
 }
+
+// DisconnectUser disconnects all sources and clients belonging to a specific user.
+// This should be called when a user is disabled.
+func (mgr *Manager) DisconnectUser(userID int64) {
+	mgr.mu.RLock()
+	mounts := make([]*MountPoint, 0, len(mgr.mounts))
+	for _, mp := range mgr.mounts {
+		mounts = append(mounts, mp)
+	}
+	mgr.mu.RUnlock()
+
+	for _, mp := range mounts {
+		mp.KickSourceByUser(userID)
+		mp.KickClientsByUser(userID)
+	}
+}

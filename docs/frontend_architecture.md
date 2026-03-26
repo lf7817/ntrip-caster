@@ -519,6 +519,7 @@ export interface MountpointRow {
   source_auth_mode: string;
   write_queue: number;
   write_timeout_ms: number;
+  max_clients: number;
 }
 
 export interface MountpointInfo extends MountpointRow {
@@ -530,12 +531,16 @@ export interface CreateMountpointReq {
   name: string;
   description: string;
   format?: string;
+  source_secret?: string;
+  max_clients?: number;
 }
 
 export interface UpdateMountpointReq {
   description?: string;
   format?: string;
   enabled?: boolean;
+  source_secret?: string;
+  max_clients?: number;
 }
 
 export interface SourceInfo {

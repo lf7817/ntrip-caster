@@ -96,6 +96,7 @@
     │   │
     │   ├── limiter
     │   │     ip_limiter.go
+    │   │     global_limiter.go
     │   │
     │   ├── auth
     │   │     auth.go

@@ -64,6 +64,7 @@ export default function MountpointsPage() {
   const [newDesc, setNewDesc] = useState("")
   const [newFormat, setNewFormat] = useState("RTCM3")
   const [newSourceSecret, setNewSourceSecret] = useState("")
+  const [newMaxClients, setNewMaxClients] = useState(0)
 
   // Edit form
   const [editDesc, setEditDesc] = useState("")
@@ -71,12 +72,14 @@ export default function MountpointsPage() {
   const [editEnabled, setEditEnabled] = useState(true)
   const [editSourceSecret, setEditSourceSecret] = useState("")
   const [editSourceSecretDirty, setEditSourceSecretDirty] = useState(false)
+  const [editMaxClients, setEditMaxClients] = useState(0)
 
   function openCreate() {
     setNewName("")
     setNewDesc("")
     setNewFormat("RTCM3")
     setNewSourceSecret("")
+    setNewMaxClients(0)
     setCreateOpen(true)
   }
 
@@ -87,6 +90,7 @@ export default function MountpointsPage() {
     setEditEnabled(mp.enabled)
     setEditSourceSecret("")
     setEditSourceSecretDirty(false)
+    setEditMaxClients(mp.max_clients)
   }
 
   async function handleCreate() {
@@ -95,6 +99,7 @@ export default function MountpointsPage() {
         name: newName,
         description: newDesc,
         format: newFormat || undefined,
+        max_clients: newMaxClients || undefined,
         ...(newSourceSecret ? { source_secret: newSourceSecret } : {}),
       })
       toast.success("挂载点创建成功")
@@ -113,6 +118,7 @@ export default function MountpointsPage() {
           description: editDesc,
           format: editFormat,
           enabled: editEnabled,
+          max_clients: editMaxClients,
           ...(editSourceSecretDirty ? { source_secret: editSourceSecret } : {}),
         },
       })
@@ -198,7 +204,9 @@ export default function MountpointsPage() {
                         {mp.source_online ? "在线" : "离线"}
                       </span>
                     </TableCell>
-                    <TableCell className="text-right">{mp.client_count}</TableCell>
+                    <TableCell className="text-right">
+                      {mp.max_clients > 0 ? `${mp.client_count} / ${mp.max_clients}` : mp.client_count}
+                    </TableCell>
                     <TableCell className="text-right space-x-2">
                       <Button variant="ghost" size="sm" onClick={() => openEdit(mp)}>
                         编辑
@@ -260,6 +268,19 @@ export default function MountpointsPage() {
               />
               <p className="text-xs text-muted-foreground">
                 兼容只发送 SOURCE password、不发送 Authorization 的旧基站设备
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Label>最大客户端数</Label>
+              <Input
+                type="number"
+                min={0}
+                value={newMaxClients}
+                onChange={(e) => setNewMaxClients(parseInt(e.target.value) || 0)}
+                placeholder="0 表示无限制"
+              />
+              <p className="text-xs text-muted-foreground">
+                限制该挂载点允许的 Rover 连接数，0 表示无限制
               </p>
             </div>
           </div>
@@ -327,6 +348,19 @@ export default function MountpointsPage() {
               </div>
               <p className="text-xs text-muted-foreground">
                 清空后，仅支持带 Authorization 的基站（或关闭认证）
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Label>最大客户端数</Label>
+              <Input
+                type="number"
+                min={0}
+                value={editMaxClients}
+                onChange={(e) => setEditMaxClients(parseInt(e.target.value) || 0)}
+                placeholder="0 表示无限制"
+              />
+              <p className="text-xs text-muted-foreground">
+                限制该挂载点允许的 Rover 连接数，0 表示无限制
               </p>
             </div>
           </div>

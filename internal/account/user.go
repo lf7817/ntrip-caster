@@ -20,6 +20,7 @@ type MountPointRow struct {
 	SourceAuthMode  string `json:"source_auth_mode"`
 	WriteQueue      *int   `json:"write_queue,omitempty"`
 	WriteTimeoutMs  *int   `json:"write_timeout_ms,omitempty"`
+	MaxClients      int    `json:"max_clients"` // 0 = unlimited
 }
 
 // Binding represents a user-mountpoint access binding.

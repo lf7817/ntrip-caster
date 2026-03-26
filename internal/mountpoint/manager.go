@@ -28,7 +28,7 @@ func (mgr *Manager) Get(name string) *MountPoint {
 
 // Create creates a new mountpoint. Returns an error if one with the same
 // name already exists.
-func (mgr *Manager) Create(name, description, format string, writeQueue int, writeTimeout time.Duration) (*MountPoint, error) {
+func (mgr *Manager) Create(name, description, format string, writeQueue int, writeTimeout time.Duration, maxClients int) (*MountPoint, error) {
 	mgr.mu.Lock()
 	defer mgr.mu.Unlock()
 
@@ -36,7 +36,7 @@ func (mgr *Manager) Create(name, description, format string, writeQueue int, wri
 		return nil, fmt.Errorf("mountpoint %q already exists", name)
 	}
 
-	mp := NewMountPoint(name, description, format, writeQueue, writeTimeout)
+	mp := NewMountPoint(name, description, format, writeQueue, writeTimeout, maxClients)
 	mgr.mounts[name] = mp
 	return mp, nil
 }
@@ -84,7 +84,7 @@ func (mgr *Manager) DisconnectAll() {
 
 // UpdateMountPoint updates metadata fields of an existing mountpoint.
 // When a mountpoint is disabled, it disconnects all active connections.
-func (mgr *Manager) UpdateMountPoint(name string, description string, format string, enabled bool, writeQueue int, writeTimeout time.Duration) error {
+func (mgr *Manager) UpdateMountPoint(name string, description string, format string, enabled bool, writeQueue int, writeTimeout time.Duration, maxClients int) error {
 	mgr.mu.RLock()
 	mp, exists := mgr.mounts[name]
 	mgr.mu.RUnlock()
@@ -99,6 +99,7 @@ func (mgr *Manager) UpdateMountPoint(name string, description string, format str
 	mp.enabled.Store(enabled)
 	mp.WriteQueue = writeQueue
 	mp.WriteTimeout = writeTimeout
+	mp.MaxClients = maxClients
 	mp.mu.Unlock()
 
 	// Disconnect all connections when disabling

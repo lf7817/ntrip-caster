@@ -215,6 +215,7 @@ func (h *Handlers) CreateMountpoint(w http.ResponseWriter, r *http.Request) {
 		Description  string `json:"description"`
 		Format       string `json:"format"`
 		SourceSecret string `json:"source_secret,omitempty"`
+		MaxClients   int    `json:"max_clients"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		jsonError(w, "invalid request body", http.StatusBadRequest)
@@ -241,9 +242,16 @@ func (h *Handlers) CreateMountpoint(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if req.MaxClients > 0 {
+		if err := h.acctSvc.SetMountPointMaxClients(row.ID, req.MaxClients); err != nil {
+			jsonError(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
+
 	wq := h.cfg.MountpointDefaults.WriteQueue
 	wt := h.cfg.MountpointDefaults.WriteTimeout
-	_, _ = h.mgr.Create(req.Name, req.Description, req.Format, wq, wt)
+	_, _ = h.mgr.Create(req.Name, req.Description, req.Format, wq, wt, req.MaxClients)
 
 	jsonOK(w, row)
 }
@@ -260,6 +268,7 @@ func (h *Handlers) UpdateMountpoint(w http.ResponseWriter, r *http.Request) {
 		Format       string  `json:"format"`
 		Enabled      *bool   `json:"enabled"`
 		SourceSecret *string `json:"source_secret,omitempty"` // nil: unchanged, "": clear, other: set
+		MaxClients   *int    `json:"max_clients,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		jsonError(w, "invalid request body", http.StatusBadRequest)
@@ -284,10 +293,21 @@ func (h *Handlers) UpdateMountpoint(w http.ResponseWriter, r *http.Request) {
 	if req.Enabled != nil {
 		enabled = *req.Enabled
 	}
+	maxClients := row.MaxClients
+	if req.MaxClients != nil {
+		maxClients = *req.MaxClients
+	}
 
 	if err := h.acctSvc.UpdateMountPointRow(id, desc, format, enabled); err != nil {
 		jsonError(w, err.Error(), http.StatusInternalServerError)
 		return
+	}
+
+	if req.MaxClients != nil {
+		if err := h.acctSvc.SetMountPointMaxClients(id, *req.MaxClients); err != nil {
+			jsonError(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 	}
 
 	if req.SourceSecret != nil {
@@ -299,7 +319,7 @@ func (h *Handlers) UpdateMountpoint(w http.ResponseWriter, r *http.Request) {
 
 	wq := h.cfg.MountpointDefaults.WriteQueue
 	wt := h.cfg.MountpointDefaults.WriteTimeout
-	_ = h.mgr.UpdateMountPoint(row.Name, desc, format, enabled, wq, wt)
+	_ = h.mgr.UpdateMountPoint(row.Name, desc, format, enabled, wq, wt, maxClients)
 
 	jsonOK(w, map[string]string{"status": "ok"})
 }

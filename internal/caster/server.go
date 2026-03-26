@@ -15,11 +15,12 @@ import (
 // Server is the NTRIP TCP server that accepts Base Station and Rover
 // connections on a single port.
 type Server struct {
-	cfg      *config.Config
-	listener net.Listener
-	mgr      *mountpoint.Manager
-	acctSvc  *account.Service
-	limiter  *limiter.IPLimiter
+	cfg           *config.Config
+	listener      net.Listener
+	mgr           *mountpoint.Manager
+	acctSvc       *account.Service
+	ipLimiter     *limiter.IPLimiter
+	globalLimiter *limiter.GlobalLimiter
 
 	wg   sync.WaitGroup
 	done chan struct{}
@@ -28,11 +29,12 @@ type Server struct {
 // NewServer creates a new NTRIP TCP server.
 func NewServer(cfg *config.Config, mgr *mountpoint.Manager, acctSvc *account.Service) *Server {
 	return &Server{
-		cfg:     cfg,
-		mgr:     mgr,
-		acctSvc: acctSvc,
-		limiter: limiter.NewIPLimiter(cfg.Limits.MaxConnPerIP),
-		done:    make(chan struct{}),
+		cfg:           cfg,
+		mgr:           mgr,
+		acctSvc:       acctSvc,
+		ipLimiter:     limiter.NewIPLimiter(cfg.Limits.MaxConnPerIP),
+		globalLimiter: limiter.NewGlobalLimiter(cfg.Limits.MaxClients),
+		done:          make(chan struct{}),
 	}
 }
 
@@ -59,19 +61,20 @@ func (s *Server) ListenAndServe() error {
 		}
 
 		ip := extractIP(conn.RemoteAddr())
-		if !s.limiter.Allow(ip) {
+		if !s.ipLimiter.Allow(ip) {
 			slog.Debug("connection rate limited", "ip", ip)
 			conn.Close()
 			continue
 		}
 
 		go func() {
-			defer s.limiter.Release(ip)
+			defer s.ipLimiter.Release(ip)
 			handler := &connHandler{
-				cfg:     s.cfg,
-				mgr:     s.mgr,
-				acctSvc: s.acctSvc,
-				wg:      &s.wg,
+				cfg:           s.cfg,
+				mgr:           s.mgr,
+				acctSvc:       s.acctSvc,
+				wg:            &s.wg,
+				globalLimiter: s.globalLimiter,
 			}
 			handler.handle(conn)
 		}()

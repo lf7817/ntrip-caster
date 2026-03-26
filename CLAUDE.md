@@ -57,7 +57,7 @@ make test-bench-mb        # Benchmark: 5 bases + 5000 rovers
 | `internal/api` | REST handlers, session middleware, SPA fallback |
 | `internal/account` | User/mountpoint CRUD, bcrypt auth, SQLite persistence |
 | `internal/rtcm` | RTCM3 frame parser (preamble detection, length extraction) |
-| `internal/limiter` | Per-IP connection rate limiting |
+| `internal/limiter` | IP rate limiting, global client limiting |
 
 ### Critical Pattern: Atomic Snapshot Broadcast
 
@@ -111,14 +111,20 @@ auth:
 limits:
   max_clients: 5000      # global rover cap
   max_conn_per_ip: 10    # per-IP rate limit
+
+mountpoint_defaults:
+  write_queue: 64
+  write_timeout: 3s
 ```
+
+For mountpoint-level client limits, set `max_clients` per mountpoint via API or web UI. See `docs/rate_limiting.md` for details.
 
 ## Database Schema
 
 SQLite tables (see `internal/database/database.go`):
 - `users` - id, username, password_hash, role (admin/base/rover), enabled
-- `mountpoints` - id, name, description, format, enabled, write_queue, write_timeout_ms, secret
-- `user_mountpoint_bindings` - user_id, mountpoint_id, permission (publish/subscribe)
+- `mountpoints` - id, name, description, format, enabled, write_queue, write_timeout_ms, max_clients, secret
+- `user_mountpoint_bindings` - user_id, mountpoint_id
 
 Default admin created on first run: `admin`/`admin`
 

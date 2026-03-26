@@ -207,7 +207,7 @@ func (s *Service) SetMountPointSourceSecret(mountpointID int64, secret string) e
 // GetMountPointRow retrieves a mountpoint by name.
 func (s *Service) GetMountPointRow(name string) (*MountPointRow, error) {
 	row := s.db.QueryRow(
-		"SELECT id, name, description, enabled, format, source_auth_mode, write_queue, write_timeout_ms FROM mountpoints WHERE name = ?", name,
+		"SELECT id, name, description, enabled, format, source_auth_mode, write_queue, write_timeout_ms, max_clients FROM mountpoints WHERE name = ?", name,
 	)
 	return scanMountPointRow(row)
 }
@@ -215,7 +215,7 @@ func (s *Service) GetMountPointRow(name string) (*MountPointRow, error) {
 // GetMountPointRowByID retrieves a mountpoint by ID.
 func (s *Service) GetMountPointRowByID(id int64) (*MountPointRow, error) {
 	row := s.db.QueryRow(
-		"SELECT id, name, description, enabled, format, source_auth_mode, write_queue, write_timeout_ms FROM mountpoints WHERE id = ?", id,
+		"SELECT id, name, description, enabled, format, source_auth_mode, write_queue, write_timeout_ms, max_clients FROM mountpoints WHERE id = ?", id,
 	)
 	return scanMountPointRow(row)
 }
@@ -223,8 +223,8 @@ func (s *Service) GetMountPointRowByID(id int64) (*MountPointRow, error) {
 func scanMountPointRow(row *sql.Row) (*MountPointRow, error) {
 	mp := &MountPointRow{}
 	var enabled int
-	var wq, wt sql.NullInt64
-	if err := row.Scan(&mp.ID, &mp.Name, &mp.Description, &enabled, &mp.Format, &mp.SourceAuthMode, &wq, &wt); err != nil {
+	var wq, wt, mc sql.NullInt64
+	if err := row.Scan(&mp.ID, &mp.Name, &mp.Description, &enabled, &mp.Format, &mp.SourceAuthMode, &wq, &wt, &mc); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
 		}
@@ -239,13 +239,16 @@ func scanMountPointRow(row *sql.Row) (*MountPointRow, error) {
 		v := int(wt.Int64)
 		mp.WriteTimeoutMs = &v
 	}
+	if mc.Valid {
+		mp.MaxClients = int(mc.Int64)
+	}
 	return mp, nil
 }
 
 // ListMountPointRows returns all mountpoint records.
 func (s *Service) ListMountPointRows() ([]*MountPointRow, error) {
 	rows, err := s.db.Query(
-		"SELECT id, name, description, enabled, format, source_auth_mode, write_queue, write_timeout_ms FROM mountpoints ORDER BY id",
+		"SELECT id, name, description, enabled, format, source_auth_mode, write_queue, write_timeout_ms, max_clients FROM mountpoints ORDER BY id",
 	)
 	if err != nil {
 		return nil, fmt.Errorf("list mountpoints: %w", err)
@@ -256,8 +259,8 @@ func (s *Service) ListMountPointRows() ([]*MountPointRow, error) {
 	for rows.Next() {
 		mp := &MountPointRow{}
 		var enabled int
-		var wq, wt sql.NullInt64
-		if err := rows.Scan(&mp.ID, &mp.Name, &mp.Description, &enabled, &mp.Format, &mp.SourceAuthMode, &wq, &wt); err != nil {
+		var wq, wt, mc sql.NullInt64
+		if err := rows.Scan(&mp.ID, &mp.Name, &mp.Description, &enabled, &mp.Format, &mp.SourceAuthMode, &wq, &wt, &mc); err != nil {
 			return nil, fmt.Errorf("scan mountpoint: %w", err)
 		}
 		mp.Enabled = enabled != 0
@@ -268,6 +271,9 @@ func (s *Service) ListMountPointRows() ([]*MountPointRow, error) {
 		if wt.Valid {
 			v := int(wt.Int64)
 			mp.WriteTimeoutMs = &v
+		}
+		if mc.Valid {
+			mp.MaxClients = int(mc.Int64)
 		}
 		list = append(list, mp)
 	}
@@ -286,6 +292,15 @@ func (s *Service) UpdateMountPointRow(id int64, description, format string, enab
 	)
 	if err != nil {
 		return fmt.Errorf("update mountpoint: %w", err)
+	}
+	return nil
+}
+
+// SetMountPointMaxClients updates the max_clients field for a mountpoint.
+func (s *Service) SetMountPointMaxClients(id int64, maxClients int) error {
+	_, err := s.db.Exec("UPDATE mountpoints SET max_clients = ? WHERE id = ?", maxClients, id)
+	if err != nil {
+		return fmt.Errorf("update mountpoint max_clients: %w", err)
 	}
 	return nil
 }

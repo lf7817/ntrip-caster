@@ -26,7 +26,8 @@ CREATE TABLE IF NOT EXISTS mountpoints (
     source_auth_mode TEXT    NOT NULL DEFAULT 'user_binding',
     source_secret_hash TEXT,
     write_queue      INTEGER,
-    write_timeout_ms INTEGER
+    write_timeout_ms INTEGER,
+    max_clients      INTEGER DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS user_mountpoint_bindings (
@@ -65,6 +66,11 @@ func Open(path string) (*sql.DB, error) {
 		return nil, fmt.Errorf("migrate bindings: %w", err)
 	}
 
+	if err := migrateMountpointMaxClients(db); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("migrate max_clients: %w", err)
+	}
+
 	return db, nil
 }
 
@@ -90,5 +96,17 @@ func migrateBindings(db *sql.DB) error {
 		ALTER TABLE _bindings_new RENAME TO user_mountpoint_bindings;
 	`
 	_, err = db.Exec(migration)
+	return err
+}
+
+// migrateMountpointMaxClients adds the max_clients column to mountpoints
+// if it doesn't exist. This is a one-time migration for existing databases.
+func migrateMountpointMaxClients(db *sql.DB) error {
+	var count int
+	err := db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('mountpoints') WHERE name = 'max_clients'`).Scan(&count)
+	if err != nil || count > 0 {
+		return nil
+	}
+	_, err = db.Exec(`ALTER TABLE mountpoints ADD COLUMN max_clients INTEGER DEFAULT 0`)
 	return err
 }

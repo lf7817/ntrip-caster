@@ -2,6 +2,7 @@ package caster
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -12,6 +13,7 @@ import (
 	"ntrip-caster/internal/auth"
 	"ntrip-caster/internal/client"
 	"ntrip-caster/internal/config"
+	"ntrip-caster/internal/limiter"
 	"ntrip-caster/internal/mountpoint"
 	"ntrip-caster/internal/source"
 	"ntrip-caster/internal/sourcetable"
@@ -22,9 +24,10 @@ import (
 // connHandler encapsulates the dependencies needed to handle a single
 // NTRIP TCP connection.
 type connHandler struct {
-	cfg     *config.Config
-	mgr     *mountpoint.Manager
-	acctSvc *account.Service
+	cfg           *config.Config
+	mgr           *mountpoint.Manager
+	acctSvc       *account.Service
+	globalLimiter *limiter.GlobalLimiter
 
 	wg *sync.WaitGroup
 }
@@ -107,21 +110,40 @@ func (h *connHandler) handleRover(conn net.Conn, req *NTRIPRequest) {
 		return
 	}
 
-	// Respond
-	writeResponse(conn, "ICY 200 OK\r\n\r\n")
+	// Check global client limit
+	if h.globalLimiter.AtCapacity() {
+		writeResponse(conn, "HTTP/1.1 503 Service Unavailable\r\nContent-Type: text/plain\r\n\r\nServer at capacity")
+		conn.Close()
+		return
+	}
 
-	// Register client
+	// Register client (this also checks mountpoint-level limit)
 	id := uuid.New().String()
 	c := client.New(
 		id, userID, conn, mp, mp.Name,
 		mp.WriteQueue,
 		mp.WriteTimeout,
 	)
-	mp.AddClient(c)
+	if err := mp.AddClient(c); err != nil {
+		if errors.Is(err, mountpoint.ErrClientLimitReached) {
+			writeResponse(conn, "HTTP/1.1 503 Service Unavailable\r\nContent-Type: text/plain\r\n\r\nMountpoint at capacity")
+		} else {
+			writeResponse(conn, "HTTP/1.1 500 Internal Server Error\r\n\r\n")
+		}
+		conn.Close()
+		return
+	}
+
+	// Increment global counter after successful mountpoint registration
+	h.globalLimiter.Add()
+
+	// Respond
+	writeResponse(conn, "ICY 200 OK\r\n\r\n")
 
 	h.wg.Add(1)
 	go func() {
 		defer h.wg.Done()
+		defer h.globalLimiter.Release()
 		c.WriteLoop()
 	}()
 }

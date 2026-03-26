@@ -2,6 +2,7 @@
 package mountpoint
 
 import (
+	"errors"
 	"log/slog"
 	"sync"
 	"sync/atomic"
@@ -11,6 +12,9 @@ import (
 	"ntrip-caster/internal/metrics"
 	"ntrip-caster/internal/rtcm"
 )
+
+// ErrClientLimitReached is returned when a mountpoint's client limit is reached.
+var ErrClientLimitReached = errors.New("mountpoint client limit reached")
 
 // MountPoint represents a single NTRIP mountpoint with an optional source
 // and zero or more rover clients.
@@ -25,6 +29,7 @@ type MountPoint struct {
 	enabled      atomic.Bool // thread-safe enabled state
 	WriteQueue   int
 	WriteTimeout time.Duration
+	MaxClients   int // 0 = unlimited
 
 	mu          sync.Mutex
 	source      *SourceInfo
@@ -44,13 +49,14 @@ type SourceInfo struct {
 }
 
 // NewMountPoint creates an enabled mountpoint with the given defaults.
-func NewMountPoint(name, description, format string, writeQueue int, writeTimeout time.Duration) *MountPoint {
+func NewMountPoint(name, description, format string, writeQueue int, writeTimeout time.Duration, maxClients int) *MountPoint {
 	mp := &MountPoint{
 		Name:         name,
 		Description:  description,
 		Format:       format,
 		WriteQueue:   writeQueue,
 		WriteTimeout: writeTimeout,
+		MaxClients:   maxClients,
 		clientsByID:  make(map[string]*client.Client),
 	}
 	mp.enabled.Store(true)
@@ -141,14 +147,21 @@ func (m *MountPoint) SourceUserID() int64 {
 }
 
 // AddClient registers a client for broadcast. Thread-safe.
-func (m *MountPoint) AddClient(c *client.Client) {
+// Returns ErrClientLimitReached if the mountpoint's client limit is reached.
+func (m *MountPoint) AddClient(c *client.Client) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+
+	// Check client limit
+	if m.MaxClients > 0 && len(m.clientsByID) >= m.MaxClients {
+		return ErrClientLimitReached
+	}
 
 	m.clientsByID[c.ID] = c
 	m.rebuildSnapshotLocked()
 	m.Stats.ClientCount.Store(int64(len(m.clientsByID)))
 	slog.Info("client connected", "mount", m.Name, "client", c.ID)
+	return nil
 }
 
 // RemoveClient removes a client by ID. Called from Client.writeLoop via defer.

@@ -110,7 +110,7 @@ func syncMountpoints(acctSvc *account.Service, mgr *mountpoint.Manager, cfg *con
 		if row.WriteTimeoutMs != nil {
 			wt = time.Duration(*row.WriteTimeoutMs) * time.Millisecond
 		}
-		if _, err := mgr.Create(row.Name, row.Description, row.Format, wq, wt); err != nil {
+		if _, err := mgr.Create(row.Name, row.Description, row.Format, wq, wt, row.MaxClients); err != nil {
 			slog.Warn("skip mountpoint", "name", row.Name, "err", err)
 		}
 	}

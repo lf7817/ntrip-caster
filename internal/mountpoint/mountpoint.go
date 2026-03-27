@@ -42,10 +42,12 @@ type MountPoint struct {
 // SourceInfo is a lightweight view of the currently connected source,
 // kept inside MountPoint to avoid import cycles with the source package.
 type SourceInfo struct {
-	ID     string
-	UserID int64 // user who established this connection (0 if no auth)
-	Done   chan struct{}
-	Stop   func() // called to close the source connection
+	ID        string
+	UserID    int64 // user who established this connection (0 if no auth)
+	Done      chan struct{}
+	Stop      func()        // called to close the source connection
+	BytesIn   *atomic.Int64 // pointer to source's BytesIn counter
+	StartTime time.Time     // connection start time
 }
 
 // NewMountPoint creates an enabled mountpoint with the given defaults.
@@ -144,6 +146,16 @@ func (m *MountPoint) SourceUserID() int64 {
 		return 0
 	}
 	return m.source.UserID
+}
+
+// GetSourceInfo returns a copy of the current source info, or nil if none.
+func (m *MountPoint) GetSourceInfo() *SourceInfo {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.source == nil {
+		return nil
+	}
+	return m.source
 }
 
 // AddClient registers a client for broadcast. Thread-safe.
@@ -328,8 +340,10 @@ func (m *MountPoint) ClientIDs() []string {
 
 // ClientInfo contains basic information about a connected client.
 type ClientInfo struct {
-	ID     string
-	UserID int64
+	ID          string
+	UserID      int64
+	BytesOut    int64
+	ConnectedAt time.Time
 }
 
 // ClientInfos returns a snapshot of currently connected clients with their user IDs.
@@ -338,7 +352,12 @@ func (m *MountPoint) ClientInfos() []ClientInfo {
 	defer m.mu.Unlock()
 	infos := make([]ClientInfo, 0, len(m.clientsByID))
 	for _, c := range m.clientsByID {
-		infos = append(infos, ClientInfo{ID: c.ID, UserID: c.UserID})
+		infos = append(infos, ClientInfo{
+			ID:          c.ID,
+			UserID:      c.UserID,
+			BytesOut:    c.BytesOut.Load(),
+			ConnectedAt: c.ConnectedAt,
+		})
 	}
 	return infos
 }

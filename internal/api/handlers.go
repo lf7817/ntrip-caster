@@ -349,44 +349,81 @@ func (h *Handlers) DeleteMountpoint(w http.ResponseWriter, r *http.Request) {
 // --- Online Sources / Clients ---
 
 func (h *Handlers) ListSources(w http.ResponseWriter, r *http.Request) {
+	mountFilter := r.URL.Query().Get("mountpoint")
+	usernameFilter := r.URL.Query().Get("username")
+
 	type srcInfo struct {
-		MountPoint string `json:"mountpoint"`
-		SourceID   string `json:"source_id"`
-		UserID     int64  `json:"user_id"`
-		Username   string `json:"username"`
+		MountPoint  string `json:"mountpoint"`
+		SourceID    string `json:"source_id"`
+		UserID      int64  `json:"user_id"`
+		Username    string `json:"username"`
+		BytesIn     int64  `json:"bytes_in"`
+		ConnectedAt string `json:"connected_at"`
+		Duration    int64  `json:"duration_seconds"`
 	}
 	var result []srcInfo
 	for _, mp := range h.mgr.List() {
-		sid := mp.SourceID()
-		if sid != "" {
-			userID := mp.SourceUserID()
-			var username string
-			if userID > 0 {
-				user, err := h.acctSvc.GetUser(userID)
-				if err == nil && user != nil {
-					username = user.Username
-				}
-			}
-			result = append(result, srcInfo{
-				MountPoint: mp.Name,
-				SourceID:   sid,
-				UserID:     userID,
-				Username:   username,
-			})
+		si := mp.GetSourceInfo()
+		if si == nil || si.ID == "" {
+			continue
 		}
+
+		// Filter by mountpoint
+		if mountFilter != "" && mp.Name != mountFilter {
+			continue
+		}
+
+		userID := si.UserID
+		var username string
+		if userID > 0 {
+			user, err := h.acctSvc.GetUser(userID)
+			if err == nil && user != nil {
+				username = user.Username
+			}
+		}
+
+		// Filter by username
+		if usernameFilter != "" && username != usernameFilter {
+			continue
+		}
+
+		var bytesIn int64
+		if si.BytesIn != nil {
+			bytesIn = si.BytesIn.Load()
+		}
+		result = append(result, srcInfo{
+			MountPoint:  mp.Name,
+			SourceID:    si.ID,
+			UserID:      userID,
+			Username:    username,
+			BytesIn:     bytesIn,
+			ConnectedAt: si.StartTime.Format(time.RFC3339),
+			Duration:    int64(time.Since(si.StartTime).Seconds()),
+		})
 	}
 	jsonOK(w, result)
 }
 
 func (h *Handlers) ListClients(w http.ResponseWriter, r *http.Request) {
+	mountFilter := r.URL.Query().Get("mountpoint")
+	usernameFilter := r.URL.Query().Get("username")
+
 	type cliInfo struct {
-		MountPoint string `json:"mountpoint"`
-		ClientID   string `json:"client_id"`
-		UserID     int64  `json:"user_id"`
-		Username   string `json:"username"`
+		MountPoint  string `json:"mountpoint"`
+		ClientID    string `json:"client_id"`
+		UserID      int64  `json:"user_id"`
+		Username    string `json:"username"`
+		BytesOut    int64  `json:"bytes_out"`
+		ConnectedAt string `json:"connected_at"`
+		Duration    int64  `json:"duration_seconds"`
 	}
+
 	var result []cliInfo
 	for _, mp := range h.mgr.List() {
+		if mountFilter != "" && mp.Name != mountFilter {
+			continue
+		}
+
 		for _, c := range mp.ClientInfos() {
 			var username string
 			if c.UserID > 0 {
@@ -395,14 +432,23 @@ func (h *Handlers) ListClients(w http.ResponseWriter, r *http.Request) {
 					username = user.Username
 				}
 			}
+
+			if usernameFilter != "" && username != usernameFilter {
+				continue
+			}
+
 			result = append(result, cliInfo{
-				MountPoint: mp.Name,
-				ClientID:   c.ID,
-				UserID:     c.UserID,
-				Username:   username,
+				MountPoint:  mp.Name,
+				ClientID:    c.ID,
+				UserID:      c.UserID,
+				Username:    username,
+				BytesOut:    c.BytesOut,
+				ConnectedAt: c.ConnectedAt.Format(time.RFC3339),
+				Duration:    int64(time.Since(c.ConnectedAt).Seconds()),
 			})
 		}
 	}
+
 	jsonOK(w, result)
 }
 

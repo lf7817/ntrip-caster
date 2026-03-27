@@ -68,6 +68,9 @@ export interface SourceInfo {
   source_id: string
   user_id: number
   username: string
+  bytes_in: number
+  connected_at: string
+  duration_seconds: number
 }
 
 export interface ClientInfo {
@@ -75,6 +78,9 @@ export interface ClientInfo {
   client_id: string
   user_id: number
   username: string
+  bytes_out: number
+  connected_at: string
+  duration_seconds: number
 }
 
 export interface MountpointStats {

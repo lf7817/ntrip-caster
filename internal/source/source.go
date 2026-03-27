@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"ntrip-caster/internal/metrics"
@@ -21,6 +22,7 @@ type Source struct {
 	Done      chan struct{}
 	CloseOnce sync.Once
 	StartTime time.Time
+	BytesIn   atomic.Int64 // bytes received from this source
 }
 
 // New creates a new Source and registers it on the given mountpoint.
@@ -36,10 +38,12 @@ func New(id string, userID int64, conn net.Conn, mp *mountpoint.MountPoint) *Sou
 	}
 
 	info := &mountpoint.SourceInfo{
-		ID:     id,
-		UserID: userID,
-		Done:   s.Done,
-		Stop:   func() { s.Close() },
+		ID:        id,
+		UserID:    userID,
+		Done:      s.Done,
+		Stop:      func() { s.Close() },
+		BytesIn:   &s.BytesIn,
+		StartTime: s.StartTime,
 	}
 	if !mp.SetSource(info) {
 		return nil
@@ -79,16 +83,17 @@ func (s *Source) ReadLoop() {
 			return
 		}
 
+		s.BytesIn.Add(int64(n))
 		s.Mount.Stats.BytesIn.Add(int64(n))
 		packets := framer.Push(buf[:n])
 		for _, pkt := range packets {
 			s.Mount.Broadcast(pkt)
-			addBytesOut(&s.Mount.Stats, pkt, s.Mount)
+			addBytesOut(&s.Mount.Stats, pkt)
 		}
 	}
 }
 
-func addBytesOut(stats *metrics.MountStats, pkt *rtcm.RTCMPacket, mp *mountpoint.MountPoint) {
+func addBytesOut(stats *metrics.MountStats, pkt *rtcm.RTCMPacket) {
 	cc := stats.ClientCount.Load()
 	if cc > 0 {
 		stats.BytesOut.Add(int64(len(pkt.Data)) * cc)

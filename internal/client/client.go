@@ -29,6 +29,7 @@ type Client struct {
 	slow        int32
 	CloseOnce   sync.Once
 	ConnectedAt time.Time
+	BytesOut    atomic.Int64 // bytes sent to this client
 
 	writeTimeout time.Duration
 }
@@ -109,12 +110,13 @@ func (c *Client) WriteLoop() {
 			if c.writeTimeout > 0 {
 				_ = c.Conn.SetWriteDeadline(time.Now().Add(c.writeTimeout))
 			}
-			_, err := c.Conn.Write(pkt.Data)
+			n, err := c.Conn.Write(pkt.Data)
 			if err != nil {
 				slog.Debug("client write error", "client", c.ID, "mount", c.MountName, "err", err)
 				c.KickSlowConsumer()
 				return
 			}
+			c.BytesOut.Add(int64(n))
 		}
 	}
 }

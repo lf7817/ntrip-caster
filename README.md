@@ -324,13 +324,29 @@ go run ./cmd/simrover -mounts BENCH_0,BENCH_1,BENCH_2,BENCH_3,BENCH_4 -count 500
 
 ## 路线图
 
-- [ ] NTRIP TLS 加密
-- [ ] Prometheus 指标端点
-- [ ] Web 管理界面
-- [ ] 集群模式（多节点）
-- [ ] Rover 地图可视化
-- [ ] 基站自动注册
-- [ ] 流量统计与计费
+### 已完成
+
+- [x] Web 管理界面（React SPA）
+- [x] 流量统计（实时 BytesIn/BytesOut）
+- [x] 用户/挂载点管理（CRUD + 角色权限）
+- [x] 慢客户端踢除（CAS 防抖 + 写队列）
+- [x] IP 限流（单 IP 并发连接数限制）
+- [x] 优雅停机（按序断开 Source/Client）
+
+### 待实现
+
+| 优先级 | 功能 | 说明 | 设计文档 |
+|--------|------|------|----------|
+| P0 | NTRIP TLS 加密 | 生产环境安全必备 | - |
+| P0 | Prometheus `/metrics` | 运维监控必备 | - |
+| P1 | 基站位置解析 (1005) | 解析 RTCM 1005 提取基站坐标，地图展示 | [设计文档](docs/superpowers/specs/2026-03-29-base-station-position-design.md) |
+| P2 | 流量历史记录 | SQLite 表记录每分钟/每小时流量，支持趋势图 | - |
+| P3 | 集群模式 | 需重构架构，引入 Redis/Etcd 做 mountpoint 同步 | - |
+
+### 移除
+
+- 基站自动注册 — 不需要，手动管理即可
+- 计费功能 — 小规模部署暂不需要
 
 ## 参与贡献
 

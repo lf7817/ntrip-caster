@@ -1,22 +1,25 @@
-import { useEffect, useRef, useState } from "react"
+import { useState, useEffect, useMemo, useCallback, useEffectEvent, useRef } from "react"
 import { useSearchParams } from "react-router"
-import { Map, View } from "ol"
-import TileLayer from "ol/layer/Tile"
-import VectorLayer from "ol/layer/Vector"
-import OSM from "ol/source/OSM"
+import { OSM } from "ol/source"
 import VectorSource from "ol/source/Vector"
 import Feature from "ol/Feature"
 import Point from "ol/geom/Point"
+import VectorLayer from "ol/layer/Vector"
 import { fromLonLat } from "ol/proj"
 import { Style, Circle, Fill, Stroke, Text } from "ol/style"
-import "ol/ol.css" // OpenLayers CSS - 必须导入才能正确显示地图
+import MapBrowserEvent from "ol/MapBrowserEvent"
+import { unByKey } from "ol/Observable"
+import "ol/ol.css"
+import "react-openlayers/dist/index.css"
+import { Map, View, TileLayer, useMap } from "react-openlayers"
 import { useMountpoints } from "@/api/hooks"
 import type { MountpointInfo } from "@/api/types"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
 
-// 基站标记样式
+// 规则：rendering-hoist-jsx - 静态样式提取到组件外部（但需要参数，保持为函数）
+
 function createMarkerStyle(name: string, isStale: boolean) {
   return new Style({
     image: new Circle({
@@ -34,73 +37,58 @@ function createMarkerStyle(name: string, isStale: boolean) {
   })
 }
 
-export default function MapPage() {
-  const { data: mounts, isLoading } = useMountpoints()
-  const [searchParams] = useSearchParams()
-  const highlightMount = searchParams.get("mount")
+// 内部组件：地图标记层
+function MarkerLayer({
+  mounts,
+  onSelect,
+}: {
+  mounts: MountpointInfo[]
+  onSelect: (mp: MountpointInfo) => void
+}) {
+  const map = useMap()
+  const vectorSourceRef = useMemo(() => new VectorSource(), [])
+  const vectorLayerRef = useMemo(
+    () => new VectorLayer({ source: vectorSourceRef }),
+    [vectorSourceRef]
+  )
 
-  const mapRef = useRef<HTMLDivElement>(null)
-  const mapObjRef = useRef<Map | null>(null)
-  const mountsRef = useRef<MountpointInfo[] | undefined>(mounts)
-  const [selectedMount, setSelectedMount] = useState<MountpointInfo | null>(null)
-
-  // 保持 mountsRef 为最新值，供 click 事件使用
+  // 规则：advanced-event-handler-refs - 使用 ref 存储事件处理器依赖的最新值
+  const mountsRef = useRef(mounts)
   useEffect(() => {
     mountsRef.current = mounts
   }, [mounts])
 
-  // 初始化地图
+  // 规则：advanced-use-latest - 使用 useEffectEvent 获取稳定的回调引用
+  const onSelectEvent = useEffectEvent(onSelect)
+
+  // 规则：advanced-init-once - 只初始化一次 layer 和事件监听
   useEffect(() => {
-    if (!mapRef.current) return
+    if (!map) return
+    map.addLayer(vectorLayerRef)
 
-    const map = new Map({
-      target: mapRef.current,
-      layers: [
-        new TileLayer({
-          source: new OSM(),
-        }),
-      ],
-      view: new View({
-        center: fromLonLat([116.4, 39.9]), // 北京
-        zoom: 5,
-      }),
-    })
-
-    mapObjRef.current = map
-
-    // 修复：强制更新地图尺寸，解决首次加载空白问题
-    requestAnimationFrame(() => {
-      map.updateSize()
-    })
-
-    // 点击事件 - 使用 mountsRef.current 获取最新值
-    map.on("click", (e) => {
+    // 点击事件处理 - 使用 mountsRef.current 获取最新值
+    const handleClick = (e: MapBrowserEvent<PointerEvent>) => {
       const features = map.getFeaturesAtPixel(e.pixel)
       if (features.length > 0) {
         const feat = features[0] as Feature
-        const mountName = feat.get("mountName")
-        const mount = mountsRef.current?.find(m => m.name === mountName)
-        setSelectedMount(mount || null)
-      } else {
-        setSelectedMount(null)
+        const mountName = feat.get("mountName") as string
+        const mp = mountsRef.current.find(m => m.name === mountName)
+        if (mp) onSelectEvent(mp)
       }
-    })
-
-    // 监听窗口 resize，确保地图尺寸正确
-    const handleResize = () => map.updateSize()
-    window.addEventListener("resize", handleResize)
-
-    return () => {
-      window.removeEventListener("resize", handleResize)
-      map.setTarget(undefined)
     }
-  }, [])
 
-  // 添加标记
+    // 规则：client-event-listeners - 使用 map.on 返回 key，unByKey 清理
+    // @ts-expect-error OpenLayers 类型定义过于严格，"click" 是有效的事件类型
+    const eventKey = map.on("click", handleClick)
+    return () => {
+      map.removeLayer(vectorLayerRef)
+      unByKey(eventKey)
+    }
+  }, [map, vectorLayerRef]) // 规则：advanced-event-handler-refs - 不包含 mounts 和 onSelectEvent
+
+  // 规则：rerender-derived-state - 更新 features 而不重建 layer
   useEffect(() => {
-    if (!mapObjRef.current || !mounts) return
-
-    const vectorSource = new VectorSource()
+    vectorSourceRef.clear()
     const now = Date.now() / 1000
 
     mounts.forEach(mp => {
@@ -111,39 +99,61 @@ export default function MapPage() {
       })
       feat.set("mountName", mp.name)
 
-      // 判断是否过期（> 1 小时）
       const isStale = mp.antenna_updated_at
         ? (now - new Date(mp.antenna_updated_at).getTime() / 1000) > 3600
         : true
 
       feat.setStyle(createMarkerStyle(mp.name, isStale))
-      vectorSource.addFeature(feat)
+      vectorSourceRef.addFeature(feat)
     })
+  }, [mounts, vectorSourceRef])
 
-    const vectorLayer = new VectorLayer({
-      source: vectorSource,
-    })
+  return null
+}
 
-    mapObjRef.current.addLayer(vectorLayer)
+export default function MapPage() {
+  const { data: mounts, isLoading } = useMountpoints()
+  const [searchParams] = useSearchParams()
+  const highlightMount = searchParams.get("mount")
 
-    // 高亮指定挂载点
-    if (highlightMount) {
+  // 规则：rerender-move-effect-to-event - 交互状态只在事件处理器中更新
+  const [selectedMount, setSelectedMount] = useState<MountpointInfo | null>(null)
+
+  // 规则：rerender-derived-state - 派生数据在渲染时计算
+  const mountsWithLocation = useMemo(
+    () => mounts?.filter(m => m.antenna_lat != null && m.antenna_lon != null) ?? [],
+    [mounts]
+  )
+
+  // 规则：rerender-derived-state - 派生显示状态（用户选中优先，URL 参数次之）
+  const displayMount = useMemo(() => {
+    if (selectedMount) return selectedMount
+    if (highlightMount && mounts) {
+      return mounts.find(m => m.name === highlightMount) ?? null
+    }
+    return null
+  }, [selectedMount, highlightMount, mounts])
+
+  // 规则：rerender-derived-state - 派生视图中心
+  const initialCenter = useMemo(() => {
+    if (highlightMount && mounts) {
       const mp = mounts.find(m => m.name === highlightMount)
-      if (mp?.antenna_lat && mp?.antenna_lon) {
-        mapObjRef.current.getView().animate({
-          center: fromLonLat([mp.antenna_lon, mp.antenna_lat]),
-          zoom: 12,
-          duration: 500,
-        })
-        setSelectedMount(mp)
+      if (mp?.antenna_lon && mp?.antenna_lat) {
+        return fromLonLat([mp.antenna_lon, mp.antenna_lat])
       }
     }
+    return fromLonLat([116.4, 39.9]) // 北京
+  }, [highlightMount, mounts])
 
-    // 清理：移除旧的 vector layer
-    return () => {
-      mapObjRef.current?.removeLayer(vectorLayer)
-    }
-  }, [mounts, highlightMount])
+  const initialZoom = highlightMount ? 12 : 5
+
+  // 规则：rerender-functional-setstate - 简单的 setState，使用 useCallback 保持稳定引用
+  const handleSelect = useCallback((mp: MountpointInfo) => {
+    setSelectedMount(mp)
+  }, [])
+
+  // 规则：rerender-derived-state - 派生有位置数据的数量
+  const locationCount = mountsWithLocation.length
 
   if (isLoading) {
     return (
@@ -155,60 +165,54 @@ export default function MapPage() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">基站地图</h1>
-        <Badge variant="outline">
-          {mounts?.filter(m => m.antenna_lat != null).length || 0} 个有位置数据
-        </Badge>
+    <div className="h-[calc(100vh-4rem)] flex flex-col">
+      <div className="flex items-center justify-between px-4 py-2 border-b">
+        <h1 className="text-xl font-semibold">基站地图</h1>
+        <Badge variant="outline">{locationCount} 个有位置数据</Badge>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <div className="lg:col-span-2">
-          <div ref={mapRef} className="h-[500px] rounded-md border" />
+      <div className="flex-1 relative">
+        <div className="absolute inset-0 rounded-md border overflow-hidden">
+          <Map style={{ height: "100%", width: "100%" }}>
+            <TileLayer source={new OSM()} />
+            <MarkerLayer mounts={mountsWithLocation} onSelect={handleSelect} />
+            <View center={initialCenter} zoom={initialZoom} />
+          </Map>
         </div>
 
-        <div>
-          {selectedMount ? (
-            <Card>
-              <CardHeader>
-                <CardTitle>{selectedMount.name}</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                <div className="text-sm text-muted-foreground">
-                  {selectedMount.description || "无描述"}
+        {displayMount && (
+          <Card className="absolute bottom-4 right-4 w-64 shadow-lg z-10">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-lg">{displayMount.name}</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-1 text-sm">
+              <div className="text-muted-foreground">
+                {displayMount.description || "无描述"}
+              </div>
+              <div className="grid grid-cols-2 gap-1">
+                <div>
+                  <span className="text-muted-foreground">纬度：</span>
+                  {displayMount.antenna_lat?.toFixed(6)}
                 </div>
-                <div className="grid grid-cols-2 gap-2 text-sm">
-                  <div>
-                    <span className="text-muted-foreground">纬度：</span>
-                    {selectedMount.antenna_lat?.toFixed(6)}
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground">经度：</span>
-                    {selectedMount.antenna_lon?.toFixed(6)}
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground">高度：</span>
-                    {selectedMount.antenna_height?.toFixed(1)} m
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground">更新：</span>
-                    {selectedMount.antenna_updated_at || "未知"}
-                  </div>
+                <div>
+                  <span className="text-muted-foreground">经度：</span>
+                  {displayMount.antenna_lon?.toFixed(6)}
                 </div>
-                <Badge variant={selectedMount.source_online ? "default" : "secondary"}>
-                  {selectedMount.source_online ? "在线" : "离线"}
-                </Badge>
-              </CardContent>
-            </Card>
-          ) : (
-            <Card>
-              <CardContent className="py-8 text-center text-muted-foreground">
-                点击地图标记查看基站详情
-              </CardContent>
-            </Card>
-          )}
-        </div>
+                <div>
+                  <span className="text-muted-foreground">高度：</span>
+                  {displayMount.antenna_height?.toFixed(1)} m
+                </div>
+                <div>
+                  <span className="text-muted-foreground">更新：</span>
+                  {displayMount.antenna_updated_at || "未知"}
+                </div>
+              </div>
+              <Badge variant={displayMount.source_online ? "default" : "secondary"}>
+                {displayMount.source_online ? "在线" : "离线"}
+              </Badge>
+            </CardContent>
+          </Card>
+        )}
       </div>
     </div>
   )

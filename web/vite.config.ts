@@ -21,7 +21,7 @@ export default defineConfig({
     port: 5173,
     proxy: {
       "/api": {
-        target: "http://localhost:8080",
+        target: "http://36.152.34.250:18083",
         changeOrigin: true,
       },
     },

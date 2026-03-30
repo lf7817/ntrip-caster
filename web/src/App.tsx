@@ -10,6 +10,7 @@ import DashboardPage from "@/pages/dashboard"
 import UsersPage from "@/pages/users"
 import MountpointsPage from "@/pages/mountpoints"
 import ConnectionsPage from "@/pages/connections"
+import MapPage from "@/pages/map"
 import NotFoundPage from "@/pages/not-found"
 
 const queryClient = new QueryClient({
@@ -35,6 +36,7 @@ export default function App() {
                   <Route path="users" element={<UsersPage />} />
                   <Route path="mountpoints" element={<MountpointsPage />} />
                   <Route path="connections" element={<ConnectionsPage />} />
+                  <Route path="map" element={<MapPage />} />
                 </Route>
               </Route>
               <Route path="*" element={<NotFoundPage />} />

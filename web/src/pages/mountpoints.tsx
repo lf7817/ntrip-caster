@@ -208,6 +208,15 @@ export default function MountpointsPage() {
                       {mp.max_clients > 0 ? `${mp.client_count} / ${mp.max_clients}` : mp.client_count}
                     </TableCell>
                     <TableCell className="text-right space-x-2">
+                      {mp.antenna_lat != null && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => window.location.href = `/map?mount=${mp.name}`}
+                        >
+                          位置
+                        </Button>
+                      )}
                       <Button variant="ghost" size="sm" onClick={() => openEdit(mp)}>
                         编辑
                       </Button>

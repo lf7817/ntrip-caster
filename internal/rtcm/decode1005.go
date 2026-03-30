@@ -2,7 +2,9 @@ package rtcm
 
 import (
 	"errors"
+	"fmt"
 	"math"
+	"time"
 )
 
 // WGS84 椭球参数
@@ -94,4 +96,110 @@ func DistanceBetweenPositions(p1, p2 *AntennaPosition) float64 {
 	c := 2 * math.Atan2(math.Sqrt(a), math.Sqrt(1-a))
 
 	return R * c
+}
+
+// Decode1005 解析 RTCM 1005 报文，提取基站天线位置。
+func Decode1005(pkt *RTCMPacket) (*AntennaPosition, error) {
+	data := pkt.Data
+
+	// 最小帧长度检查
+	// 1005 payload 至少 125 bits ≈ 16 bytes
+	if len(data) < 22 {
+		return nil, fmt.Errorf("frame too short for 1005: %d bytes", len(data))
+	}
+
+	// 验证消息类型
+	msgType := ExtractMsgType(pkt)
+	if msgType != 1005 {
+		return nil, fmt.Errorf("message type %d is not 1005", msgType)
+	}
+
+	// 提取 payload
+	payloadLen := int(data[1]&0x03)<<8 | int(data[2])
+	if payloadLen < 16 {
+		return nil, fmt.Errorf("payload too short: %d bytes", payloadLen)
+	}
+	payload := data[3 : 3+payloadLen]
+
+	// 使用 bitReader 解析
+	br := &bitReader{data: payload}
+
+	// 跳过已解析的字段
+	br.skip(12) // DF002 - 消息类型
+	br.skip(12) // DF003 - 站点 ID
+	br.skip(20) // DF021 - ITRF 年份
+	br.skip(3)  // DF022, DF141, DF142
+
+	// 读取 ECEF 坐标
+	x := br.readSigned38()
+	y := br.readSigned38()
+	z := br.readSigned38()
+
+	if br.err != nil {
+		return nil, fmt.Errorf("bit field extraction failed: %w", br.err)
+	}
+
+	// 单位转换: 0.0001mm → m
+	xMeter := float64(x) * 0.0001 / 1000
+	yMeter := float64(y) * 0.0001 / 1000
+	zMeter := float64(z) * 0.0001 / 1000
+
+	// 转换为经纬度
+	lat, lon, h, err := ecefToLatLng(xMeter, yMeter, zMeter)
+	if err != nil {
+		return nil, fmt.Errorf("coordinate conversion failed: %w", err)
+	}
+
+	return &AntennaPosition{
+		Latitude:  lat,
+		Longitude: lon,
+		Height:    h,
+		UpdatedAt: time.Now().Unix(),
+	}, nil
+}
+
+// bitReader 辅助解析 RTCM bit fields
+type bitReader struct {
+	data   []byte
+	offset int
+	err    error
+}
+
+func (br *bitReader) skip(n int) {
+	br.offset += n
+}
+
+func (br *bitReader) readUint(n int) uint64 {
+	if br.err != nil {
+		return 0
+	}
+
+	byteOffset := br.offset / 8
+	bitOffset := br.offset % 8
+
+	bytesNeeded := (bitOffset + n + 7) / 8
+	if byteOffset+bytesNeeded > len(br.data) {
+		br.err = fmt.Errorf("insufficient data at bit %d", br.offset)
+		return 0
+	}
+
+	var result uint64
+	for i := 0; i < bytesNeeded; i++ {
+		result = (result << 8) | uint64(br.data[byteOffset+i])
+	}
+
+	result = (result >> (bytesNeeded*8 - bitOffset - n)) & ((1 << n) - 1)
+	br.offset += n
+	return result
+}
+
+func (br *bitReader) readSigned38() int64 {
+	u := br.readUint(38)
+	if br.err != nil {
+		return 0
+	}
+	if u >= (1 << 37) {
+		return int64(u) - (1 << 38)
+	}
+	return int64(u)
 }

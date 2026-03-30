@@ -2,6 +2,7 @@ package rtcm
 
 import (
 	"math"
+	"strings"
 	"testing"
 )
 
@@ -71,7 +72,7 @@ func TestEcefToLatLng(t *testing.T) {
 		wantH        float64 // 米
 		toleranceLat float64 // 度容差
 		toleranceLon float64 // 度容差
-		toleranceH    float64 // 米容差
+		toleranceH   float64 // 米容差
 		wantErr      bool
 	}{
 		{
@@ -169,6 +170,53 @@ func TestEcefToLatLng(t *testing.T) {
 			}
 			if diff := math.Abs(h - tt.wantH); diff > tt.toleranceH {
 				t.Errorf("h = %.2f, want %.2f (diff %.2f)", h, tt.wantH, diff)
+			}
+		})
+	}
+}
+
+func TestDecode1005(t *testing.T) {
+	tests := []struct {
+		name       string
+		data       []byte
+		wantErr    bool
+		errContain string
+	}{
+		{
+			name:       "too short frame",
+			data:       []byte{0xD3, 0x00, 0x01},
+			wantErr:    true,
+			errContain: "too short",
+		},
+		{
+			name: "wrong message type",
+			data: []byte{
+				0xD3, 0x00, 0x13,
+				0x43, 0x20, // msg type 1074
+				0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+				0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+				0x00, 0x00, 0x00,
+			},
+			wantErr:    true,
+			errContain: "not 1005",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pkt := &RTCMPacket{Data: tt.data}
+			_, err := Decode1005(pkt)
+
+			if tt.wantErr {
+				if err == nil {
+					t.Errorf("Decode1005() expected error, got nil")
+				} else if tt.errContain != "" && !strings.Contains(err.Error(), tt.errContain) {
+					t.Errorf("Decode1005() error = %v, want containing %q", err, tt.errContain)
+				}
+			} else {
+				if err != nil {
+					t.Errorf("Decode1005() unexpected error: %v", err)
+				}
 			}
 		})
 	}

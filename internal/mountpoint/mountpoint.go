@@ -37,6 +37,11 @@ type MountPoint struct {
 	snapshot    atomic.Value // []*client.Client
 
 	Stats metrics.MountStats
+
+	// 天线位置信息（可选）
+	antennaPos         *rtcm.AntennaPosition
+	antennaPosMu       sync.Mutex
+	antennaPosLastUpdate atomic.Int64 // 防抖时间戳 (nanoseconds)
 }
 
 // SourceInfo is a lightweight view of the currently connected source,
@@ -369,4 +374,59 @@ func (m *MountPoint) rebuildSnapshotLocked() {
 		next = append(next, c)
 	}
 	m.snapshot.Store(next)
+}
+
+// UpdateAntennaPosition 更新天线位置（带 5 秒防抖）。
+// 位置跳变超过 10km 时记录 Warn 日志但仍更新。
+func (m *MountPoint) UpdateAntennaPosition(pos *rtcm.AntennaPosition) {
+	m.antennaPosMu.Lock()
+	defer m.antennaPosMu.Unlock()
+
+	now := time.Now().UnixNano()
+	lastUpdate := m.antennaPosLastUpdate.Load()
+	debounceNanos := int64(5 * time.Second)
+
+	// 防抖检查
+	if lastUpdate > 0 && now-lastUpdate < debounceNanos {
+		slog.Debug("position update debounced", "mount", m.Name)
+		return
+	}
+
+	// 跳变检测
+	if m.antennaPos != nil && pos != nil {
+		dist := rtcm.DistanceBetweenPositions(m.antennaPos, pos)
+		if dist > 10000 { // 10km
+			slog.Warn("antenna position large jump",
+				"mount", m.Name,
+				"old_lat", m.antennaPos.Latitude,
+				"old_lon", m.antennaPos.Longitude,
+				"new_lat", pos.Latitude,
+				"new_lon", pos.Longitude,
+				"distance_km", dist/1000)
+		}
+	}
+
+	// 更新位置
+	oldPos := m.antennaPos
+	m.antennaPos = pos
+	m.antennaPosLastUpdate.Store(now)
+
+	if oldPos == nil && pos != nil {
+		slog.Info("antenna position set", "mount", m.Name, "lat", pos.Latitude, "lon", pos.Longitude, "height", pos.Height)
+	} else if pos != nil {
+		slog.Debug("antenna position updated", "mount", m.Name, "lat", pos.Latitude, "lon", pos.Longitude)
+	}
+}
+
+// GetAntennaPosition 返回当前天线位置（线程安全）。
+// 返回 nil 表示无位置数据。
+func (m *MountPoint) GetAntennaPosition() *rtcm.AntennaPosition {
+	m.antennaPosMu.Lock()
+	defer m.antennaPosMu.Unlock()
+	return m.antennaPos
+}
+
+// SetAntennaPosLastUpdate 设置上次更新时间（仅用于测试）。
+func (m *MountPoint) SetAntennaPosLastUpdate(t time.Time) {
+	m.antennaPosLastUpdate.Store(t.UnixNano())
 }

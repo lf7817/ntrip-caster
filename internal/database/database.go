@@ -71,6 +71,11 @@ func Open(path string) (*sql.DB, error) {
 		return nil, fmt.Errorf("migrate max_clients: %w", err)
 	}
 
+	if err := migrateAntennaPosition(db); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("migrate antenna_position: %w", err)
+	}
+
 	return db, nil
 }
 
@@ -109,4 +114,28 @@ func migrateMountpointMaxClients(db *sql.DB) error {
 	}
 	_, err = db.Exec(`ALTER TABLE mountpoints ADD COLUMN max_clients INTEGER DEFAULT 0`)
 	return err
+}
+
+// migrateAntennaPosition adds antenna position columns to mountpoints
+// if they don't exist. This is a one-time migration for existing databases.
+func migrateAntennaPosition(db *sql.DB) error {
+	var count int
+	err := db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('mountpoints') WHERE name = 'antenna_lat'`).Scan(&count)
+	if err != nil || count > 0 {
+		return nil
+	}
+
+	migrations := []string{
+		`ALTER TABLE mountpoints ADD COLUMN antenna_lat REAL DEFAULT NULL`,
+		`ALTER TABLE mountpoints ADD COLUMN antenna_lon REAL DEFAULT NULL`,
+		`ALTER TABLE mountpoints ADD COLUMN antenna_height REAL DEFAULT NULL`,
+		`ALTER TABLE mountpoints ADD COLUMN antenna_updated_at INTEGER DEFAULT NULL`,
+	}
+
+	for _, m := range migrations {
+		if _, err := db.Exec(m); err != nil {
+			return err
+		}
+	}
+	return nil
 }

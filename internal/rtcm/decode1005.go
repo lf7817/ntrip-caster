@@ -116,8 +116,10 @@ func Decode1005(pkt *RTCMPacket) (*AntennaPosition, error) {
 
 	// 提取 payload
 	payloadLen := int(data[1]&0x03)<<8 | int(data[2])
-	if payloadLen < 16 {
-		return nil, fmt.Errorf("payload too short: %d bytes", payloadLen)
+	// 1005 完整报文需要 161 bits = 21 bytes payload
+	// 但某些设备可能发送不完整的报文，最少需要 21 bytes
+	if payloadLen < 21 {
+		return nil, fmt.Errorf("payload too short for 1005: %d bytes (need 21)", payloadLen)
 	}
 	payload := data[3 : 3+payloadLen]
 

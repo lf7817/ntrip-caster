@@ -41,7 +41,13 @@ export default function MapPage() {
 
   const mapRef = useRef<HTMLDivElement>(null)
   const mapObjRef = useRef<Map | null>(null)
+  const mountsRef = useRef<MountpointInfo[] | undefined>(mounts)
   const [selectedMount, setSelectedMount] = useState<MountpointInfo | null>(null)
+
+  // 保持 mountsRef 为最新值，供 click 事件使用
+  useEffect(() => {
+    mountsRef.current = mounts
+  }, [mounts])
 
   // 初始化地图
   useEffect(() => {
@@ -62,20 +68,32 @@ export default function MapPage() {
 
     mapObjRef.current = map
 
-    // 点击事件
+    // 修复：强制更新地图尺寸，解决首次加载空白问题
+    requestAnimationFrame(() => {
+      map.updateSize()
+    })
+
+    // 点击事件 - 使用 mountsRef.current 获取最新值
     map.on("click", (e) => {
       const features = map.getFeaturesAtPixel(e.pixel)
       if (features.length > 0) {
         const feat = features[0] as Feature
         const mountName = feat.get("mountName")
-        const mount = mounts?.find(m => m.name === mountName)
+        const mount = mountsRef.current?.find(m => m.name === mountName)
         setSelectedMount(mount || null)
       } else {
         setSelectedMount(null)
       }
     })
 
-    return () => map.setTarget(undefined)
+    // 监听窗口 resize，确保地图尺寸正确
+    const handleResize = () => map.updateSize()
+    window.addEventListener("resize", handleResize)
+
+    return () => {
+      window.removeEventListener("resize", handleResize)
+      map.setTarget(undefined)
+    }
   }, [])
 
   // 添加标记

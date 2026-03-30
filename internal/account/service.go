@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
+	"ntrip-caster/internal/rtcm"
 )
 
 // Service provides CRUD operations for users and mountpoint records.
@@ -464,4 +465,62 @@ func (s *Service) EnsureAdmin(username, password string) error {
 	}
 	_, err := s.CreateUser(username, password, RoleAdmin)
 	return err
+}
+
+// --- Antenna Position ---
+
+// UpdateMountPointAntennaPosition 持久化天线位置到数据库。
+func (s *Service) UpdateMountPointAntennaPosition(name string, pos *rtcm.AntennaPosition) error {
+	if pos == nil {
+		return nil
+	}
+
+	_, err := s.db.Exec(`
+		UPDATE mountpoints
+		SET antenna_lat = ?, antenna_lon = ?, antenna_height = ?, antenna_updated_at = ?
+		WHERE name = ?`,
+		pos.Latitude, pos.Longitude, pos.Height, pos.UpdatedAt, name)
+
+	if err != nil {
+		return fmt.Errorf("update antenna position: %w", err)
+	}
+	return nil
+}
+
+// GetMountPointAntennaPosition 读取历史位置。
+func (s *Service) GetMountPointAntennaPosition(name string) (*rtcm.AntennaPosition, error) {
+	row := s.db.QueryRow(`
+		SELECT antenna_lat, antenna_lon, antenna_height, antenna_updated_at
+		FROM mountpoints WHERE name = ?`, name)
+
+	var lat, lon, h sql.NullFloat64
+	var ts sql.NullInt64
+
+	if err := row.Scan(&lat, &lon, &h, &ts); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("query antenna position: %w", err)
+	}
+
+	if !lat.Valid || !lon.Valid {
+		return nil, nil
+	}
+
+	var height float64
+	if h.Valid {
+		height = h.Float64
+	}
+
+	var updatedAt int64
+	if ts.Valid {
+		updatedAt = ts.Int64
+	}
+
+	return &rtcm.AntennaPosition{
+		Latitude:  lat.Float64,
+		Longitude: lon.Float64,
+		Height:    height,
+		UpdatedAt: updatedAt,
+	}, nil
 }

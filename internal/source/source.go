@@ -87,6 +87,16 @@ func (s *Source) ReadLoop() {
 		s.Mount.Stats.BytesIn.Add(int64(n))
 		packets := framer.Push(buf[:n])
 		for _, pkt := range packets {
+			// 检查是否为 1005 报文
+			if rtcm.ExtractMsgType(pkt) == 1005 {
+				pos, err := rtcm.Decode1005(pkt)
+				if err == nil && pos != nil {
+					s.Mount.UpdateAntennaPosition(pos)
+				} else if err != nil {
+					slog.Debug("1005 decode error", "source", s.ID, "err", err)
+				}
+			}
+
 			s.Mount.Broadcast(pkt)
 			addBytesOut(&s.Mount.Stats, pkt)
 		}

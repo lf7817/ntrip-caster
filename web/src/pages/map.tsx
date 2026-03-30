@@ -9,6 +9,7 @@ import Feature from "ol/Feature"
 import Point from "ol/geom/Point"
 import { fromLonLat } from "ol/proj"
 import { Style, Circle, Fill, Stroke, Text } from "ol/style"
+import "ol/ol.css" // OpenLayers CSS - 必须导入才能正确显示地图
 import { useMountpoints } from "@/api/hooks"
 import type { MountpointInfo } from "@/api/types"
 import { Badge } from "@/components/ui/badge"

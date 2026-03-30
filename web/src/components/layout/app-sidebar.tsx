@@ -1,5 +1,5 @@
 import { NavLink } from "react-router"
-import { LayoutDashboard, Users, Radio, Cable, LogOut } from "lucide-react"
+import { LayoutDashboard, Users, Radio, Cable, LogOut, MapPin } from "lucide-react"
 import { useAuth } from "@/hooks/use-auth"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
@@ -10,6 +10,7 @@ const navItems = [
   { to: "/users", icon: Users, label: "用户管理" },
   { to: "/mountpoints", icon: Radio, label: "挂载点" },
   { to: "/connections", icon: Cable, label: "连接监控" },
+  { to: "/map", icon: MapPin, label: "基站地图" },
 ]
 
 export function AppSidebar() {

@@ -192,8 +192,12 @@ func (h *Handlers) ListMountpoints(w http.ResponseWriter, r *http.Request) {
 
 	type mpInfo struct {
 		account.MountPointRow
-		SourceOnline bool  `json:"source_online"`
-		ClientCount  int64 `json:"client_count"`
+		SourceOnline     bool    `json:"source_online"`
+		ClientCount      int64   `json:"client_count"`
+		AntennaLat       float64 `json:"antenna_lat,omitempty"`
+		AntennaLon       float64 `json:"antenna_lon,omitempty"`
+		AntennaHeight    float64 `json:"antenna_height,omitempty"`
+		AntennaUpdatedAt string  `json:"antenna_updated_at,omitempty"`
 	}
 
 	result := make([]mpInfo, 0, len(rows))
@@ -203,6 +207,16 @@ func (h *Handlers) ListMountpoints(w http.ResponseWriter, r *http.Request) {
 			snap := mp.Stats.Snapshot()
 			info.SourceOnline = snap.SourceOnline
 			info.ClientCount = snap.ClientCount
+			// 添加天线位置信息
+			antPos := mp.GetAntennaPosition()
+			if antPos != nil {
+				info.AntennaLat = antPos.Latitude
+				info.AntennaLon = antPos.Longitude
+				info.AntennaHeight = antPos.Height
+				if antPos.UpdatedAt > 0 {
+					info.AntennaUpdatedAt = time.Unix(antPos.UpdatedAt, 0).Format(time.RFC3339)
+				}
+			}
 		}
 		result = append(result, info)
 	}

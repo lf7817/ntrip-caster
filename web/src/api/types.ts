@@ -32,6 +32,10 @@ export interface MountpointRow {
 export interface MountpointInfo extends MountpointRow {
   source_online: boolean
   client_count: number
+  antenna_lat?: number
+  antenna_lon?: number
+  antenna_height?: number
+  antenna_updated_at?: string
 }
 
 export interface CreateMountpointReq {

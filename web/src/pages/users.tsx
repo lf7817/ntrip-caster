@@ -60,6 +60,19 @@ const roleBadgeVariant: Record<string, "default" | "secondary" | "outline"> = {
   rover: "outline",
 }
 
+const roleFilterLabels: Record<string, string> = {
+  all: "全部角色",
+  admin: "admin",
+  base: "base",
+  rover: "rover",
+}
+
+const enabledFilterLabels: Record<string, string> = {
+  all: "全部状态",
+  true: "启用",
+  false: "禁用",
+}
+
 export default function UsersPage() {
   // Pagination and search state
   const [page, setPage] = useState(1)
@@ -206,7 +219,7 @@ export default function UsersPage() {
         </div>
         <Select value={roleFilter || "all"} onValueChange={handleRoleChange}>
           <SelectTrigger className="w-32">
-            <SelectValue placeholder="角色" />
+            <SelectValue>{roleFilterLabels[roleFilter || "all"]}</SelectValue>
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">全部角色</SelectItem>
@@ -217,7 +230,7 @@ export default function UsersPage() {
         </Select>
         <Select value={enabledFilter || "all"} onValueChange={handleEnabledChange}>
           <SelectTrigger className="w-32">
-            <SelectValue placeholder="状态" />
+            <SelectValue>{enabledFilterLabels[enabledFilter || "all"]}</SelectValue>
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">全部状态</SelectItem>

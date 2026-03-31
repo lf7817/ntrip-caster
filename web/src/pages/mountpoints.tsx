@@ -50,6 +50,19 @@ import {
 
 const FORMAT_OPTIONS = ["RTCM3", "RTCM 3.2", "RTCM 3.3"] as const
 
+const formatFilterLabels: Record<string, string> = {
+  all: "全部格式",
+  RTCM3: "RTCM3",
+  "RTCM 3.2": "RTCM 3.2",
+  "RTCM 3.3": "RTCM 3.3",
+}
+
+const enabledFilterLabels: Record<string, string> = {
+  all: "全部状态",
+  true: "启用",
+  false: "禁用",
+}
+
 export default function MountpointsPage() {
   // Pagination and search state
   const [page, setPage] = useState(1)
@@ -202,7 +215,7 @@ export default function MountpointsPage() {
         </div>
         <Select value={formatFilter || "all"} onValueChange={handleFormatChange}>
           <SelectTrigger className="w-32">
-            <SelectValue placeholder="格式" />
+            <SelectValue>{formatFilterLabels[formatFilter || "all"]}</SelectValue>
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">全部格式</SelectItem>
@@ -215,7 +228,7 @@ export default function MountpointsPage() {
         </Select>
         <Select value={enabledFilter || "all"} onValueChange={handleEnabledChange}>
           <SelectTrigger className="w-32">
-            <SelectValue placeholder="状态" />
+            <SelectValue>{enabledFilterLabels[enabledFilter || "all"]}</SelectValue>
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">全部状态</SelectItem>

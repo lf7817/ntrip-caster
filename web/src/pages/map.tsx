@@ -145,7 +145,7 @@ export default function MapPage() {
     return fromLonLat([116.4, 39.9]) // 北京
   }, [highlightMount, mounts])
 
-  const initialZoom = highlightMount ? 12 : 5
+  const initialZoom = highlightMount ? 15 : 5
 
   // 规则：rerender-functional-setstate - 简单的 setState，使用 useCallback 保持稳定引用
   const handleSelect = useCallback((mp: MountpointInfo) => {
@@ -181,35 +181,37 @@ export default function MapPage() {
         </div>
 
         {displayMount && (
-          <Card className="absolute bottom-4 right-4 w-64 shadow-lg z-10">
+          <Card className="absolute bottom-4 right-4 w-72 shadow-lg z-10">
             <CardHeader className="pb-2">
               <CardTitle className="text-lg">{displayMount.name}</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-1 text-sm">
-              <div className="text-muted-foreground">
+            <CardContent className="space-y-2 text-sm">
+              <div className="text-muted-foreground truncate">
                 {displayMount.description || "无描述"}
               </div>
-              <div className="grid grid-cols-2 gap-1">
-                <div>
+              <div className="grid grid-cols-2 gap-x-2 gap-y-1">
+                <div className="truncate">
                   <span className="text-muted-foreground">纬度：</span>
                   {displayMount.antenna_lat?.toFixed(6)}
                 </div>
-                <div>
+                <div className="truncate">
                   <span className="text-muted-foreground">经度：</span>
                   {displayMount.antenna_lon?.toFixed(6)}
                 </div>
-                <div>
+                <div className="truncate">
                   <span className="text-muted-foreground">高度：</span>
                   {displayMount.antenna_height?.toFixed(1)} m
                 </div>
-                <div>
-                  <span className="text-muted-foreground">更新：</span>
-                  {displayMount.antenna_updated_at || "未知"}
+                <div className="truncate">
+                  <span className="text-muted-foreground">状态：</span>
+                  <Badge variant={displayMount.source_online ? "default" : "secondary"} className="ml-1">
+                    {displayMount.source_online ? "在线" : "离线"}
+                  </Badge>
                 </div>
               </div>
-              <Badge variant={displayMount.source_online ? "default" : "secondary"}>
-                {displayMount.source_online ? "在线" : "离线"}
-              </Badge>
+              <div className="truncate text-muted-foreground">
+                更新：{displayMount.antenna_updated_at || "未知"}
+              </div>
             </CardContent>
           </Card>
         )}

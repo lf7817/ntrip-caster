@@ -148,6 +148,56 @@ func (s *Service) ListUsers() ([]*User, error) {
 	return users, rows.Err()
 }
 
+// ListUsersPaginated returns users with pagination and filtering.
+func (s *Service) ListUsersPaginated(page, limit int, search, role string, enabled *bool) ([]*User, int, error) {
+	// Build WHERE clause
+	where := "WHERE 1=1"
+	args := []any{}
+
+	if search != "" {
+		where += " AND username LIKE ?"
+		args = append(args, "%"+search+"%")
+	}
+	if role != "" {
+		where += " AND role = ?"
+		args = append(args, role)
+	}
+	if enabled != nil {
+		where += " AND enabled = ?"
+		args = append(args, *enabled)
+	}
+
+	// Get total count
+	var total int
+	countQuery := "SELECT COUNT(*) FROM users " + where
+	if err := s.db.QueryRow(countQuery, args...).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("count users: %w", err)
+	}
+
+	// Get paginated rows
+	offset := (page - 1) * limit
+	args = append(args, limit, offset)
+	query := "SELECT id, username, password_hash, role, enabled FROM users " + where + " ORDER BY id LIMIT ? OFFSET ?"
+
+	rows, err := s.db.Query(query, args...)
+	if err != nil {
+		return nil, 0, fmt.Errorf("list users paginated: %w", err)
+	}
+	defer rows.Close()
+
+	var users []*User
+	for rows.Next() {
+		u := &User{}
+		var en int
+		if err := rows.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.Role, &en); err != nil {
+			return nil, 0, fmt.Errorf("scan user: %w", err)
+		}
+		u.Enabled = en != 0
+		users = append(users, u)
+	}
+	return users, total, rows.Err()
+}
+
 // UpdateUser updates role and enabled status.
 func (s *Service) UpdateUser(id int64, role string, enabled bool) error {
 	en := 0
@@ -331,6 +381,68 @@ func (s *Service) ListMountPointRows() ([]*MountPointRow, error) {
 		list = append(list, mp)
 	}
 	return list, rows.Err()
+}
+
+// ListMountPointRowsPaginated returns mountpoints with pagination and filtering.
+func (s *Service) ListMountPointRowsPaginated(page, limit int, search, format string, enabled *bool) ([]*MountPointRow, int, error) {
+	// Build WHERE clause
+	where := "WHERE 1=1"
+	args := []any{}
+
+	if search != "" {
+		where += " AND name LIKE ?"
+		args = append(args, "%"+search+"%")
+	}
+	if format != "" {
+		where += " AND format = ?"
+		args = append(args, format)
+	}
+	if enabled != nil {
+		where += " AND enabled = ?"
+		args = append(args, *enabled)
+	}
+
+	// Get total count
+	var total int
+	countQuery := "SELECT COUNT(*) FROM mountpoints " + where
+	if err := s.db.QueryRow(countQuery, args...).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("count mountpoints: %w", err)
+	}
+
+	// Get paginated rows
+	offset := (page - 1) * limit
+	args = append(args, limit, offset)
+	query := "SELECT id, name, description, enabled, format, source_auth_mode, write_queue, write_timeout_ms, max_clients FROM mountpoints " + where + " ORDER BY id LIMIT ? OFFSET ?"
+
+	rows, err := s.db.Query(query, args...)
+	if err != nil {
+		return nil, 0, fmt.Errorf("list mountpoints paginated: %w", err)
+	}
+	defer rows.Close()
+
+	var list []*MountPointRow
+	for rows.Next() {
+		mp := &MountPointRow{}
+		var en int
+		var wq, wt, mc sql.NullInt64
+		if err := rows.Scan(&mp.ID, &mp.Name, &mp.Description, &en, &mp.Format, &mp.SourceAuthMode, &wq, &wt, &mc); err != nil {
+			return nil, 0, fmt.Errorf("scan mountpoint: %w", err)
+		}
+		mp.Enabled = en != 0
+		if wq.Valid {
+			v := int(wq.Int64)
+			mp.WriteQueue = &v
+		}
+		if wt.Valid {
+			v := int(wt.Int64)
+			mp.WriteTimeoutMs = &v
+		}
+		if mc.Valid {
+			mp.MaxClients = int(mc.Int64)
+		}
+		list = append(list, mp)
+	}
+	return list, total, rows.Err()
 }
 
 // UpdateMountPointRow updates a mountpoint record.

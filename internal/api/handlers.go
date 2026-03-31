@@ -82,12 +82,29 @@ func (h *Handlers) Logout(w http.ResponseWriter, r *http.Request) {
 // --- Users ---
 
 func (h *Handlers) ListUsers(w http.ResponseWriter, r *http.Request) {
-	users, err := h.acctSvc.ListUsers()
+	page := parseIntParam(r.URL.Query().Get("page"), 1)
+	limit := parseIntParam(r.URL.Query().Get("limit"), 50)
+	search := r.URL.Query().Get("search")
+	role := r.URL.Query().Get("role")
+
+	var enabled *bool
+	if e := r.URL.Query().Get("enabled"); e != "" {
+		val := e == "true"
+		enabled = &val
+	}
+
+	users, total, err := h.acctSvc.ListUsersPaginated(page, limit, search, role, enabled)
 	if err != nil {
 		jsonError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	jsonOK(w, users)
+
+	jsonOK(w, map[string]any{
+		"data":  users,
+		"total": total,
+		"page":  page,
+		"limit": limit,
+	})
 }
 
 func (h *Handlers) CreateUser(w http.ResponseWriter, r *http.Request) {
@@ -184,7 +201,18 @@ func (h *Handlers) DeleteUser(w http.ResponseWriter, r *http.Request) {
 // --- Mountpoints ---
 
 func (h *Handlers) ListMountpoints(w http.ResponseWriter, r *http.Request) {
-	rows, err := h.acctSvc.ListMountPointRows()
+	page := parseIntParam(r.URL.Query().Get("page"), 1)
+	limit := parseIntParam(r.URL.Query().Get("limit"), 50)
+	search := r.URL.Query().Get("search")
+	format := r.URL.Query().Get("format")
+
+	var enabled *bool
+	if e := r.URL.Query().Get("enabled"); e != "" {
+		val := e == "true"
+		enabled = &val
+	}
+
+	rows, total, err := h.acctSvc.ListMountPointRowsPaginated(page, limit, search, format, enabled)
 	if err != nil {
 		jsonError(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -207,7 +235,6 @@ func (h *Handlers) ListMountpoints(w http.ResponseWriter, r *http.Request) {
 			snap := mp.Stats.Snapshot()
 			info.SourceOnline = snap.SourceOnline
 			info.ClientCount = snap.ClientCount
-			// 添加天线位置信息
 			antPos := mp.GetAntennaPosition()
 			if antPos != nil {
 				info.AntennaLat = antPos.Latitude
@@ -220,7 +247,13 @@ func (h *Handlers) ListMountpoints(w http.ResponseWriter, r *http.Request) {
 		}
 		result = append(result, info)
 	}
-	jsonOK(w, result)
+
+	jsonOK(w, map[string]any{
+		"data":  result,
+		"total": total,
+		"page":  page,
+		"limit": limit,
+	})
 }
 
 func (h *Handlers) CreateMountpoint(w http.ResponseWriter, r *http.Request) {
@@ -613,4 +646,15 @@ func parseID(s string) (int64, bool) {
 		return 0, false
 	}
 	return id, true
+}
+
+func parseIntParam(s string, defaultVal int) int {
+	if s == "" {
+		return defaultVal
+	}
+	v, err := strconv.Atoi(s)
+	if err != nil || v < 1 {
+		return defaultVal
+	}
+	return v
 }

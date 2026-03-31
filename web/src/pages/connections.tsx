@@ -128,8 +128,8 @@ function VirtualTable<T extends SourceInfo | ClientInfo>({ data, type, onKick }:
         <div className="sticky top-0 z-10 bg-background border-b grid font-medium text-sm"
           style={{
             gridTemplateColumns: isSource
-              ? "1fr 1fr 1fr 120px 100px 80px"
-              : "1fr 1fr 1fr 120px 100px 80px",
+              ? "1fr 1fr 1fr 120px 120px 80px"
+              : "1fr 1fr 1fr 120px 120px 80px",
           }}
         >
           <div className="px-4 py-3">挂载点</div>
@@ -151,8 +151,8 @@ function VirtualTable<T extends SourceInfo | ClientInfo>({ data, type, onKick }:
                 height: virtualRow.size,
                 transform: `translateY(${virtualRow.start}px)`,
                 gridTemplateColumns: isSource
-                  ? "1fr 1fr 1fr 120px 100px 80px"
-                  : "1fr 1fr 1fr 120px 100px 80px",
+                  ? "1fr 1fr 1fr 120px 120px 80px"
+                  : "1fr 1fr 1fr 120px 120px 80px",
               }}
             >
               <div className="px-4 py-3 font-medium truncate">

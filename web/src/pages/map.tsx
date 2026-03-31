@@ -112,7 +112,8 @@ function MarkerLayer({
 }
 
 export default function MapPage() {
-  const { data: mounts, isLoading } = useMountpoints()
+  const { data: mountsData, isLoading } = useMountpoints({ limit: 1000 })
+  const mounts = mountsData?.data
   const [searchParams] = useSearchParams()
   const highlightMount = searchParams.get("mount")
 

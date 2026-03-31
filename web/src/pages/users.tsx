@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { Plus, X } from "lucide-react"
+import { Plus, X, Search } from "lucide-react"
 import { toast } from "sonner"
 import type { User } from "@/api/types"
 import {
@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Separator } from "@/components/ui/separator"
+import { Pagination } from "@/components/pagination"
 import {
   Table,
   TableBody,
@@ -60,7 +61,23 @@ const roleBadgeVariant: Record<string, "default" | "secondary" | "outline"> = {
 }
 
 export default function UsersPage() {
-  const { data: users, isLoading } = useUsers()
+  // Pagination and search state
+  const [page, setPage] = useState(1)
+  const [searchInput, setSearchInput] = useState("")
+  const [search, setSearch] = useState("")
+  const [roleFilter, setRoleFilter] = useState("")
+  const [enabledFilter, setEnabledFilter] = useState("")
+
+  const { data: usersData, isLoading } = useUsers({
+    page,
+    limit: 50,
+    search,
+    role: roleFilter,
+    enabled: enabledFilter,
+  })
+  const users = usersData?.data
+  const total = usersData?.total ?? 0
+
   const { data: allBindings } = useBindings()
   const createUser = useCreateUser()
   const updateUser = useUpdateUser()
@@ -86,6 +103,25 @@ export default function UsersPage() {
   const [editRole, setEditRole] = useState("")
   const [editEnabled, setEditEnabled] = useState(true)
   const [editPassword, setEditPassword] = useState("")
+
+  function handleSearch() {
+    setSearch(searchInput)
+    setPage(1)
+  }
+
+  function handleRoleChange(value: string | null) {
+    setRoleFilter(value === "all" || value === null ? "" : value)
+    setPage(1)
+  }
+
+  function handleEnabledChange(value: string | null) {
+    setEnabledFilter(value === "all" || value === null ? "" : value)
+    setPage(1)
+  }
+
+  function handlePageChange(newPage: number) {
+    setPage(newPage)
+  }
 
   function openCreate() {
     setNewUsername("")
@@ -152,6 +188,43 @@ export default function UsersPage() {
           <Plus className="mr-1 h-4 w-4" />
           创建用户
         </Button>
+      </div>
+
+      {/* Search and filters */}
+      <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2">
+          <Input
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleSearch()}
+            placeholder="搜索用户名"
+            className="w-48"
+          />
+          <Button onClick={handleSearch} size="sm">
+            <Search className="h-4 w-4" />
+          </Button>
+        </div>
+        <Select value={roleFilter || "all"} onValueChange={handleRoleChange}>
+          <SelectTrigger className="w-32">
+            <SelectValue placeholder="角色" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">全部角色</SelectItem>
+            <SelectItem value="admin">admin</SelectItem>
+            <SelectItem value="base">base</SelectItem>
+            <SelectItem value="rover">rover</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select value={enabledFilter || "all"} onValueChange={handleEnabledChange}>
+          <SelectTrigger className="w-32">
+            <SelectValue placeholder="状态" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">全部状态</SelectItem>
+            <SelectItem value="true">启用</SelectItem>
+            <SelectItem value="false">禁用</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
       {isLoading ? (
@@ -225,6 +298,15 @@ export default function UsersPage() {
             </TableBody>
           </Table>
         </div>
+      )}
+
+      {usersData && (
+        <Pagination
+          page={page}
+          total={total}
+          limit={50}
+          onPageChange={handlePageChange}
+        />
       )}
 
       {/* Create Dialog */}
@@ -330,14 +412,15 @@ export default function UsersPage() {
 
 function UserBindingsSection({ userId }: { userId: number }) {
   const { data: bindings, isLoading } = useUserBindings(userId)
-  const { data: mountpoints } = useMountpoints()
+  const { data: mountpointsData } = useMountpoints({ limit: 1000 })
   const createBinding = useCreateBinding()
   const deleteBinding = useDeleteBinding()
 
   const [addMpName, setAddMpName] = useState("")
 
+  const mountpoints = mountpointsData?.data ?? []
   const boundMpIds = new Set(bindings?.map((b) => b.mountpoint_id) ?? [])
-  const availableMountpoints = mountpoints?.filter((mp) => !boundMpIds.has(mp.id)) ?? []
+  const availableMountpoints = mountpoints.filter((mp) => !boundMpIds.has(mp.id))
 
   async function handleAdd() {
     const selectedMp = availableMountpoints.find((mp) => mp.name === addMpName)

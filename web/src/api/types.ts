@@ -103,3 +103,27 @@ export interface SystemStats {
   mountpoints: MountpointStats[]
   timestamp: string
 }
+
+// Pagination
+export interface PaginatedResponse<T> {
+  data: T[]
+  total: number
+  page: number
+  limit: number
+}
+
+export interface ListUsersParams {
+  page?: number
+  limit?: number
+  search?: string
+  role?: string
+  enabled?: string
+}
+
+export interface ListMountpointsParams {
+  page?: number
+  limit?: number
+  search?: string
+  format?: string
+  enabled?: string
+}

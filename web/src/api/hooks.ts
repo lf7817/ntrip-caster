@@ -1,10 +1,12 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { api } from "./client"
-import type { CreateUserReq, UpdateUserReq, CreateMountpointReq, UpdateMountpointReq, CreateBindingReq } from "./types"
+import type { CreateUserReq, UpdateUserReq, CreateMountpointReq, UpdateMountpointReq, CreateBindingReq, ListUsersParams, ListMountpointsParams } from "./types"
 
 export const queryKeys = {
-  users: ["users"] as const,
-  mountpoints: ["mountpoints"] as const,
+  users: (params?: ListUsersParams) => ["users", params] as const,
+  usersAll: ["users"] as const,
+  mountpoints: (params?: ListMountpointsParams) => ["mountpoints", params] as const,
+  mountpointsAll: ["mountpoints"] as const,
   bindings: ["bindings"] as const,
   sources: ["sources"] as const,
   clients: ["clients"] as const,
@@ -21,10 +23,10 @@ export function useStats() {
 }
 
 // Users
-export function useUsers() {
+export function useUsers(params?: ListUsersParams) {
   return useQuery({
-    queryKey: queryKeys.users,
-    queryFn: api.listUsers,
+    queryKey: queryKeys.users(params),
+    queryFn: () => api.listUsers(params),
   })
 }
 
@@ -32,7 +34,7 @@ export function useCreateUser() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (data: CreateUserReq) => api.createUser(data),
-    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.users }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.usersAll }),
   })
 }
 
@@ -41,7 +43,7 @@ export function useUpdateUser() {
   return useMutation({
     mutationFn: ({ id, data }: { id: number; data: UpdateUserReq }) =>
       api.updateUser(id, data),
-    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.users }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.usersAll }),
   })
 }
 
@@ -49,15 +51,15 @@ export function useDeleteUser() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (id: number) => api.deleteUser(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.users }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.usersAll }),
   })
 }
 
 // Mountpoints
-export function useMountpoints() {
+export function useMountpoints(params?: ListMountpointsParams) {
   return useQuery({
-    queryKey: queryKeys.mountpoints,
-    queryFn: api.listMountpoints,
+    queryKey: queryKeys.mountpoints(params),
+    queryFn: () => api.listMountpoints(params),
   })
 }
 
@@ -66,7 +68,7 @@ export function useCreateMountpoint() {
   return useMutation({
     mutationFn: (data: CreateMountpointReq) => api.createMountpoint(data),
     onSuccess: () =>
-      qc.invalidateQueries({ queryKey: queryKeys.mountpoints }),
+      qc.invalidateQueries({ queryKey: queryKeys.mountpointsAll }),
   })
 }
 
@@ -81,7 +83,7 @@ export function useUpdateMountpoint() {
       data: UpdateMountpointReq
     }) => api.updateMountpoint(id, data),
     onSuccess: () =>
-      qc.invalidateQueries({ queryKey: queryKeys.mountpoints }),
+      qc.invalidateQueries({ queryKey: queryKeys.mountpointsAll }),
   })
 }
 
@@ -90,7 +92,7 @@ export function useDeleteMountpoint() {
   return useMutation({
     mutationFn: (id: number) => api.deleteMountpoint(id),
     onSuccess: () =>
-      qc.invalidateQueries({ queryKey: queryKeys.mountpoints }),
+      qc.invalidateQueries({ queryKey: queryKeys.mountpointsAll }),
   })
 }
 

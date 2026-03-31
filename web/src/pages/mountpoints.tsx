@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { Plus } from "lucide-react"
+import { Plus, Search } from "lucide-react"
 import { toast } from "sonner"
 import type { MountpointInfo } from "@/api/types"
 import {
@@ -11,6 +11,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
+import { Pagination } from "@/components/pagination"
 import {
   Table,
   TableBody,
@@ -50,7 +51,23 @@ import {
 const FORMAT_OPTIONS = ["RTCM3", "RTCM 3.2", "RTCM 3.3"] as const
 
 export default function MountpointsPage() {
-  const { data: mounts, isLoading } = useMountpoints()
+  // Pagination and search state
+  const [page, setPage] = useState(1)
+  const [searchInput, setSearchInput] = useState("")
+  const [search, setSearch] = useState("")
+  const [formatFilter, setFormatFilter] = useState("")
+  const [enabledFilter, setEnabledFilter] = useState("")
+
+  const { data: mountsData, isLoading } = useMountpoints({
+    page,
+    limit: 50,
+    search,
+    format: formatFilter,
+    enabled: enabledFilter,
+  })
+  const mounts = mountsData?.data
+  const total = mountsData?.total ?? 0
+
   const createMp = useCreateMountpoint()
   const updateMp = useUpdateMountpoint()
   const deleteMp = useDeleteMountpoint()
@@ -73,6 +90,25 @@ export default function MountpointsPage() {
   const [editSourceSecret, setEditSourceSecret] = useState("")
   const [editSourceSecretDirty, setEditSourceSecretDirty] = useState(false)
   const [editMaxClients, setEditMaxClients] = useState(0)
+
+  function handleSearch() {
+    setSearch(searchInput)
+    setPage(1)
+  }
+
+  function handleFormatChange(value: string | null) {
+    setFormatFilter(value === "all" || value === null ? "" : value)
+    setPage(1)
+  }
+
+  function handleEnabledChange(value: string | null) {
+    setEnabledFilter(value === "all" || value === null ? "" : value)
+    setPage(1)
+  }
+
+  function handlePageChange(newPage: number) {
+    setPage(newPage)
+  }
 
   function openCreate() {
     setNewName("")
@@ -148,6 +184,45 @@ export default function MountpointsPage() {
           <Plus className="mr-1 h-4 w-4" />
           创建挂载点
         </Button>
+      </div>
+
+      {/* Search and filters */}
+      <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2">
+          <Input
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleSearch()}
+            placeholder="搜索挂载点名称"
+            className="w-48"
+          />
+          <Button onClick={handleSearch} size="sm">
+            <Search className="h-4 w-4" />
+          </Button>
+        </div>
+        <Select value={formatFilter || "all"} onValueChange={handleFormatChange}>
+          <SelectTrigger className="w-32">
+            <SelectValue placeholder="格式" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">全部格式</SelectItem>
+            {FORMAT_OPTIONS.map((fmt) => (
+              <SelectItem key={fmt} value={fmt}>
+                {fmt}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select value={enabledFilter || "all"} onValueChange={handleEnabledChange}>
+          <SelectTrigger className="w-32">
+            <SelectValue placeholder="状态" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">全部状态</SelectItem>
+            <SelectItem value="true">启用</SelectItem>
+            <SelectItem value="false">禁用</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
       {isLoading ? (
@@ -235,6 +310,15 @@ export default function MountpointsPage() {
             </TableBody>
           </Table>
         </div>
+      )}
+
+      {mountsData && (
+        <Pagination
+          page={page}
+          total={total}
+          limit={50}
+          onPageChange={handlePageChange}
+        />
       )}
 
       {/* Create Dialog */}

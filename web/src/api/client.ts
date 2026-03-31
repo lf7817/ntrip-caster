@@ -11,6 +11,9 @@ import type {
   SourceInfo,
   ClientInfo,
   SystemStats,
+  PaginatedResponse,
+  ListUsersParams,
+  ListMountpointsParams,
 } from "./types"
 
 class ApiError extends Error {
@@ -58,7 +61,16 @@ export const api = {
   logout: () => request<{ status: string }>("/api/logout", { method: "POST" }),
 
   // Users
-  listUsers: () => request<User[]>("/api/users"),
+  listUsers: (params?: ListUsersParams) => {
+    const query = new URLSearchParams()
+    if (params?.page) query.set("page", String(params.page))
+    if (params?.limit) query.set("limit", String(params.limit))
+    if (params?.search) query.set("search", params.search)
+    if (params?.role) query.set("role", params.role)
+    if (params?.enabled) query.set("enabled", params.enabled)
+    const qs = query.toString()
+    return request<PaginatedResponse<User>>(`/api/users${qs ? `?${qs}` : ""}`)
+  },
 
   createUser: (data: CreateUserReq) =>
     request<User>("/api/users", {
@@ -76,7 +88,16 @@ export const api = {
     request<{ status: string }>(`/api/users/${id}`, { method: "DELETE" }),
 
   // Mountpoints
-  listMountpoints: () => request<MountpointInfo[]>("/api/mountpoints"),
+  listMountpoints: (params?: ListMountpointsParams) => {
+    const query = new URLSearchParams()
+    if (params?.page) query.set("page", String(params.page))
+    if (params?.limit) query.set("limit", String(params.limit))
+    if (params?.search) query.set("search", params.search)
+    if (params?.format) query.set("format", params.format)
+    if (params?.enabled) query.set("enabled", params.enabled)
+    const qs = query.toString()
+    return request<PaginatedResponse<MountpointInfo>>(`/api/mountpoints${qs ? `?${qs}` : ""}`)
+  },
 
   createMountpoint: (data: CreateMountpointReq) =>
     request<MountpointRow>("/api/mountpoints", {

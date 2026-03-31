@@ -188,7 +188,7 @@ function VirtualTable<T extends SourceInfo | ClientInfo>({ data, type, onKick }:
 export default function ConnectionsPage() {
   const { data: sources, isLoading: sourcesLoading } = useSources()
   const { data: clients, isLoading: clientsLoading } = useClients()
-  const { data: mountpointsData } = useMountpoints()
+  const { data: mountpointsData } = useMountpoints({ limit: 1000 })
   const kickSource = useKickSource()
   const kickClient = useKickClient()
 
@@ -202,7 +202,7 @@ export default function ConnectionsPage() {
   } | null>(null)
 
   const mountpoints = useMemo(() => {
-    return mountpointsData?.map((m) => m.name) ?? []
+    return mountpointsData?.data?.map((m) => m.name) ?? []
   }, [mountpointsData])
 
   const filteredSources = useMemo(() => {

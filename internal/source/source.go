@@ -2,6 +2,7 @@
 package source
 
 import (
+	"fmt"
 	"log/slog"
 	"net"
 	"sync"
@@ -89,11 +90,28 @@ func (s *Source) ReadLoop() {
 		for _, pkt := range packets {
 			// 检查是否为 1005 报文
 			if rtcm.ExtractMsgType(pkt) == 1005 {
+				// 打印原始报文数据（用于调试）
+				slog.Info("received 1005 packet",
+					"source", s.ID,
+					"mount", s.Mount.Name,
+					"raw_hex", fmt.Sprintf("%X", pkt.Data),
+					"len", len(pkt.Data))
+
 				pos, err := rtcm.Decode1005(pkt)
 				if err == nil && pos != nil {
+					slog.Info("1005 decode success",
+						"source", s.ID,
+						"mount", s.Mount.Name,
+						"lat", pos.Latitude,
+						"lon", pos.Longitude,
+						"height", pos.Height)
 					s.Mount.UpdateAntennaPosition(pos)
 				} else if err != nil {
-					slog.Debug("1005 decode error", "source", s.ID, "err", err)
+					slog.Warn("1005 decode failed",
+						"source", s.ID,
+						"mount", s.Mount.Name,
+						"raw_hex", fmt.Sprintf("%X", pkt.Data),
+						"err", err)
 				}
 			}
 

@@ -38,9 +38,10 @@ func ecefToLatLng(x, y, z float64) (lat, lon, h float64, err error) {
 		return 0, 0, 0, ErrZeroCoordinates
 	}
 
-	// 检查是否在地球范围内
+	// 检查是否在地球范围内（放宽范围以允许不同数据源）
 	r := math.Sqrt(x*x + y*y + z*z)
-	if r < 6350000 || r > 6420000 {
+	// 地球半径约 6371 km，但允许更宽的范围（可能是缩放数据或相对坐标）
+	if r < 1000000 || r > 10000000 {
 		return 0, 0, 0, ErrOutOfRange
 	}
 
@@ -116,10 +117,10 @@ func Decode1005(pkt *RTCMPacket) (*AntennaPosition, error) {
 
 	// 提取 payload
 	payloadLen := int(data[1]&0x03)<<8 | int(data[2])
-	// 1005 完整报文需要 161 bits = 21 bytes payload
-	// 但某些设备可能发送不完整的报文，最少需要 21 bytes
-	if payloadLen < 21 {
-		return nil, fmt.Errorf("payload too short for 1005: %d bytes (need 21)", payloadLen)
+	// 1005 完整报文 payload 为 152 bits ≈ 19 bytes
+	// 最少需要 19 bytes payload 才能包含完整的 ECEF XYZ 坐标
+	if payloadLen < 19 {
+		return nil, fmt.Errorf("payload too short for 1005: %d bytes (need 19)", payloadLen)
 	}
 	payload := data[3 : 3+payloadLen]
 
@@ -129,22 +130,24 @@ func Decode1005(pkt *RTCMPacket) (*AntennaPosition, error) {
 	// 跳过已解析的字段
 	br.skip(12) // DF002 - 消息类型
 	br.skip(12) // DF003 - 站点 ID
-	br.skip(20) // DF021 - ITRF 年份
-	br.skip(3)  // DF022, DF141, DF142
+	br.skip(6)  // DF021 - ITRF 年份
+	br.skip(4)  // DF022, DF141, DF142, DF001 (GPS, GLONASS, Galileo, Ref Station Indicator)
 
-	// 读取 ECEF 坐标
+	// 读取 ECEF 坐标（每个坐标后有 2 bits Orbit Eph Flag）
 	x := br.readSigned38()
+	br.skip(2) // Orbit Eph Flag for X (实际是 2 bits)
 	y := br.readSigned38()
+	br.skip(2) // Orbit Eph Flag for Y (实际是 2 bits)
 	z := br.readSigned38()
 
 	if br.err != nil {
 		return nil, fmt.Errorf("bit field extraction failed: %w", br.err)
 	}
 
-	// 单位转换: 0.0001mm → m
-	xMeter := float64(x) * 0.0001 / 1000
-	yMeter := float64(y) * 0.0001 / 1000
-	zMeter := float64(z) * 0.0001 / 1000
+	// 单位转换: 0.0001m → m
+	xMeter := float64(x) * 0.0001
+	yMeter := float64(y) * 0.0001
+	zMeter := float64(z) * 0.0001
 
 	// 转换为经纬度
 	lat, lon, h, err := ecefToLatLng(xMeter, yMeter, zMeter)
@@ -176,22 +179,20 @@ func (br *bitReader) readUint(n int) uint64 {
 		return 0
 	}
 
-	byteOffset := br.offset / 8
-	bitOffset := br.offset % 8
-
-	bytesNeeded := (bitOffset + n + 7) / 8
-	if byteOffset+bytesNeeded > len(br.data) {
-		br.err = fmt.Errorf("insufficient data at bit %d", br.offset)
-		return 0
-	}
-
 	var result uint64
-	for i := 0; i < bytesNeeded; i++ {
-		result = (result << 8) | uint64(br.data[byteOffset+i])
-	}
+	for i := 0; i < n; i++ {
+		byteIndex := br.offset / 8
+		bitIndex := 7 - (br.offset % 8) // MSB-first: bit 7 is highest
 
-	result = (result >> (bytesNeeded*8 - bitOffset - n)) & ((1 << n) - 1)
-	br.offset += n
+		if byteIndex >= len(br.data) {
+			br.err = fmt.Errorf("insufficient data at bit %d", br.offset)
+			return 0
+		}
+
+		bit := (br.data[byteIndex] >> bitIndex) & 1
+		result = (result << 1) | uint64(bit)
+		br.offset++
+	}
 	return result
 }
 

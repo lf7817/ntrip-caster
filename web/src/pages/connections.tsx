@@ -56,6 +56,8 @@ function FilterBar({
   setUsernameFilter,
   mountpoints,
 }: FilterBarProps) {
+  const mountFilterLabel = mountFilter || "全部挂载点"
+
   return (
     <div className="flex gap-3 mb-4">
       <Select
@@ -63,7 +65,7 @@ function FilterBar({
         onValueChange={(v) => setMountFilter(v === "__all__" ? "" : v ?? "")}
       >
         <SelectTrigger className="w-48">
-          <SelectValue placeholder="全部挂载点" />
+          <SelectValue>{mountFilterLabel}</SelectValue>
         </SelectTrigger>
         <SelectContent>
           <SelectItem value="__all__">全部挂载点</SelectItem>
